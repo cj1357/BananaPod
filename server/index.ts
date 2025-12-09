@@ -23,6 +23,10 @@ if (!API_KEY) {
 // SOCKS5 Proxy configuration (optional)
 // Set SOCKS5_PROXY env var, e.g., socks5://127.0.0.1:1080
 const SOCKS5_PROXY = process.env.SOCKS5_PROXY;
+
+// Custom API base URL (optional)
+// Set GEMINI_API_BASE_URL env var, e.g., https://your-proxy-url.com
+const API_BASE_URL = process.env.GEMINI_API_BASE_URL;
 let proxyAgent: SocksProxyAgent | undefined;
 
 if (SOCKS5_PROXY) {
@@ -45,8 +49,13 @@ const ai = new GoogleGenAI({
   apiKey: API_KEY,
   httpOptions: {
     fetch: customFetch as typeof fetch,
+    ...(API_BASE_URL && { baseUrl: API_BASE_URL }),
   },
 });
+
+if (API_BASE_URL) {
+  console.log(`Using custom Gemini API base URL: ${API_BASE_URL}`);
+}
 
 // Model configuration via environment variables
 const IMAGE_EDIT_MODEL = process.env.GEMINI_IMAGE_EDIT_MODEL || 'gemini-2.5-flash-image-preview';
