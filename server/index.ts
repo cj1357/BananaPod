@@ -3,7 +3,6 @@ import cors from 'cors';
 import { GoogleGenAI, Modality, GenerateContentResponse, GenerateVideosOperation } from '@google/genai';
 import dotenv from 'dotenv';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import { fetch as undiciFetch, type RequestInit } from 'undici';
 
 dotenv.config();
 
@@ -31,19 +30,21 @@ if (SOCKS5_PROXY) {
   console.log(`Using SOCKS5 proxy: ${SOCKS5_PROXY}`);
 }
 
-// Create custom fetch with proxy support
-const customFetch = (input: string | URL | Request, init?: RequestInit) => {
-  const options: RequestInit = { ...init };
+// Create custom fetch with proxy support using node-fetch
+const customFetch = async (input: string | URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+  // Dynamic import node-fetch for ESM compatibility
+  const { default: fetch } = await import('node-fetch');
+  const options: any = { ...init };
   if (proxyAgent) {
-    options.dispatcher = proxyAgent;
+    options.agent = proxyAgent;
   }
-  return undiciFetch(input as string | URL, options);
+  return fetch(input as any, options) as unknown as Response;
 };
 
 const ai = new GoogleGenAI({ 
   apiKey: API_KEY,
   httpOptions: {
-    fetch: customFetch as unknown as typeof fetch,
+    fetch: customFetch as typeof fetch,
   },
 });
 
@@ -235,7 +236,12 @@ app.post('/api/generate-video', async (req, res) => {
     }
 
     sendProgress('Downloading generated video...');
-    const videoResponse = await customFetch(`${downloadLink}&key=${API_KEY}`);
+    const { default: fetch } = await import('node-fetch');
+    const videoFetchOptions: any = {};
+    if (proxyAgent) {
+      videoFetchOptions.agent = proxyAgent;
+    }
+    const videoResponse = await fetch(`${downloadLink}&key=${API_KEY}`, videoFetchOptions);
     if (!videoResponse.ok) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: `Failed to download video: ${videoResponse.statusText}` })}\n\n`);
       res.end();
