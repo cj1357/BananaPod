@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { GoogleGenAI, Modality, GenerateContentResponse, GenerateVideosOperation } from '@google/genai';
 import dotenv from 'dotenv';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+import { fetch as undiciFetch, type RequestInit } from 'undici';
 
 dotenv.config();
 
@@ -19,7 +21,31 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+// SOCKS5 Proxy configuration (optional)
+// Set SOCKS5_PROXY env var, e.g., socks5://127.0.0.1:1080
+const SOCKS5_PROXY = process.env.SOCKS5_PROXY;
+let proxyAgent: SocksProxyAgent | undefined;
+
+if (SOCKS5_PROXY) {
+  proxyAgent = new SocksProxyAgent(SOCKS5_PROXY);
+  console.log(`Using SOCKS5 proxy: ${SOCKS5_PROXY}`);
+}
+
+// Create custom fetch with proxy support
+const customFetch = (input: string | URL | Request, init?: RequestInit) => {
+  const options: RequestInit = { ...init };
+  if (proxyAgent) {
+    options.dispatcher = proxyAgent;
+  }
+  return undiciFetch(input as string | URL, options);
+};
+
+const ai = new GoogleGenAI({ 
+  apiKey: API_KEY,
+  httpOptions: {
+    fetch: customFetch as unknown as typeof fetch,
+  },
+});
 
 // Model configuration via environment variables
 const IMAGE_EDIT_MODEL = process.env.GEMINI_IMAGE_EDIT_MODEL || 'gemini-2.5-flash-image-preview';
@@ -209,7 +235,7 @@ app.post('/api/generate-video', async (req, res) => {
     }
 
     sendProgress('Downloading generated video...');
-    const videoResponse = await fetch(`${downloadLink}&key=${API_KEY}`);
+    const videoResponse = await customFetch(`${downloadLink}&key=${API_KEY}`);
     if (!videoResponse.ok) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: `Failed to download video: ${videoResponse.statusText}` })}\n\n`);
       res.end();
