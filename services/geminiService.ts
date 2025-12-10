@@ -90,7 +90,7 @@ export async function editImage(
           parts: parts,
         }],
         generationConfig: {
-          responseModalities: ['TEXT', 'IMAGE'],
+          responseModalities: ['IMAGE'],
         },
       }),
     });
@@ -155,7 +155,7 @@ export async function generateImageFromText(
           ],
         }],
         generationConfig: {
-          responseModalities: ['TEXT', 'IMAGE'],
+          responseModalities: ['IMAGE'],
         },
       }),
     });
