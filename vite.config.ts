@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       port: 8085,
-      host: '0.0.0.0',
+      host: '127.0.0.1',
       // --- 新增配置开始 ---
       // 允许你的 frp 域名访问
       allowedHosts: [
