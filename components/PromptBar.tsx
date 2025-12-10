@@ -1,6 +1,6 @@
 import React from 'react';
 import { QuickPrompts } from './QuickPrompts';
-import type { UserEffect, GenerationMode } from '../types';
+import type { UserEffect, GenerationMode, ImageAspectRatio, ImageSize } from '../types';
 
 interface PromptBarProps {
     t: (key: string, ...args: any[]) => string;
@@ -17,6 +17,10 @@ interface PromptBarProps {
     setGenerationMode: (mode: GenerationMode) => void;
     videoAspectRatio: '16:9' | '9:16';
     setVideoAspectRatio: (ratio: '16:9' | '9:16') => void;
+    imageAspectRatio: ImageAspectRatio | 'auto';
+    setImageAspectRatio: (ratio: ImageAspectRatio | 'auto') => void;
+    imageSize: ImageSize;
+    setImageSize: (size: ImageSize) => void;
 }
 
 export const PromptBar: React.FC<PromptBarProps> = ({
@@ -34,6 +38,10 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     setGenerationMode,
     videoAspectRatio,
     setVideoAspectRatio,
+    imageAspectRatio,
+    setImageAspectRatio,
+    imageSize,
+    setImageSize,
 }) => {
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -93,6 +101,38 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                         <button onClick={() => setVideoAspectRatio('9:16')} title={t('promptBar.aspectRatioVertical')} className={`p-1.5 rounded-full transition-colors ${videoAspectRatio === '9:16' ? 'bg-blue-500' : 'hover:bg-white/10'}`}>
                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="7" y="2" width="10" height="20" rx="2" ry="2"></rect></svg>
                         </button>
+                    </div>
+                )}
+                {generationMode === 'image' && (
+                    <div className="flex-shrink-0 flex items-center gap-1 ml-1">
+                        <select 
+                            value={imageAspectRatio} 
+                            onChange={(e) => setImageAspectRatio(e.target.value as ImageAspectRatio | 'auto')}
+                            className="bg-black/20 text-white text-sm rounded-full px-2 py-1.5 border-none outline-none cursor-pointer hover:bg-black/30"
+                            title={t('promptBar.imageAspectRatio')}
+                        >
+                            <option value="auto">{t('promptBar.aspectRatioAuto')}</option>
+                            <option value="1:1">1:1</option>
+                            <option value="2:3">2:3</option>
+                            <option value="3:2">3:2</option>
+                            <option value="3:4">3:4</option>
+                            <option value="4:3">4:3</option>
+                            <option value="4:5">4:5</option>
+                            <option value="5:4">5:4</option>
+                            <option value="9:16">9:16</option>
+                            <option value="16:9">16:9</option>
+                            <option value="21:9">21:9</option>
+                        </select>
+                        <select 
+                            value={imageSize} 
+                            onChange={(e) => setImageSize(e.target.value as ImageSize)}
+                            className="bg-black/20 text-white text-sm rounded-full px-2 py-1.5 border-none outline-none cursor-pointer hover:bg-black/30"
+                            title={t('promptBar.imageSize')}
+                        >
+                            <option value="1K">1K</option>
+                            <option value="2K">2K</option>
+                            <option value="4K">4K</option>
+                        </select>
                     </div>
                 )}
                 <QuickPrompts 

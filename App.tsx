@@ -11,7 +11,7 @@ import { Loader } from './components/Loader';
 import { CanvasSettings } from './components/CanvasSettings';
 import { LayerPanel } from './components/LayerPanel';
 import { BoardPanel } from './components/BoardPanel';
-import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, TextElement, ArrowElement, UserEffect, LineElement, WheelAction, GroupElement, Board, VideoElement } from './types';
+import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, TextElement, ArrowElement, UserEffect, LineElement, WheelAction, GroupElement, Board, VideoElement, ImageAspectRatio, ImageSize } from './types';
 import { editImage, generateImageFromText, generateVideo } from './services/geminiService';
 import { fileToDataUrl } from './utils/fileUtils';
 import { translations } from './translations';
@@ -398,6 +398,8 @@ const App: React.FC = () => {
     
     const [generationMode, setGenerationMode] = useState<'image' | 'video'>('image');
     const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
+    const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio | 'auto'>('auto');
+    const [imageSize, setImageSize] = useState<ImageSize>('1K');
     const [progressMessage, setProgressMessage] = useState<string>('');
 
     const interactionMode = useRef<string | null>(null);
@@ -1435,10 +1437,15 @@ const App: React.FC = () => {
                 if (imageElements.length === 1 && maskPaths.length > 0 && selectedElements.length === (1 + maskPaths.length)) {
                     const baseImage = imageElements[0];
                     const maskData = await rasterizeMask(maskPaths, baseImage);
+                    const imageConfig = {
+                        ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
+                        imageSize,
+                    };
                     const result = await editImage(
                         [{ href: baseImage.href, mimeType: baseImage.mimeType }],
                         prompt,
-                        { href: maskData.href, mimeType: maskData.mimeType }
+                        { href: maskData.href, mimeType: maskData.mimeType },
+                        imageConfig
                     );
                     
                     if (result.newImageBase64 && result.newImageMimeType) {
@@ -1478,7 +1485,11 @@ const App: React.FC = () => {
                     return rasterizeElement(el as Exclude<Element, ImageElement | VideoElement>);
                 });
                 const imagesToProcess = await Promise.all(imagePromises);
-                const result = await editImage(imagesToProcess, prompt);
+                const imageConfigForEdit = {
+                    ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
+                    imageSize,
+                };
+                const result = await editImage(imagesToProcess, prompt, undefined, imageConfigForEdit);
 
                 if (result.newImageBase64 && result.newImageMimeType) {
                     const { newImageBase64, newImageMimeType } = result;
@@ -1511,7 +1522,11 @@ const App: React.FC = () => {
 
             } else {
                 // Generate from scratch
-                const result = await generateImageFromText(prompt);
+                const imageConfigForGenerate = {
+                    ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
+                    imageSize,
+                };
+                const result = await generateImageFromText(prompt, imageConfigForGenerate);
 
                 if (result.newImageBase64 && result.newImageMimeType) {
                     const { newImageBase64, newImageMimeType } = result;
@@ -2389,6 +2404,10 @@ const App: React.FC = () => {
                 setGenerationMode={setGenerationMode}
                 videoAspectRatio={videoAspectRatio}
                 setVideoAspectRatio={setVideoAspectRatio}
+                imageAspectRatio={imageAspectRatio}
+                setImageAspectRatio={setImageAspectRatio}
+                imageSize={imageSize}
+                setImageSize={setImageSize}
             />}
         </div>
     );

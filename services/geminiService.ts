@@ -13,6 +13,14 @@ type ImageInput = {
   mimeType: string;
 };
 
+type ImageAspectRatio = '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
+type ImageSize = '1K' | '2K' | '4K';
+
+interface ImageConfig {
+  aspectRatio?: ImageAspectRatio;
+  imageSize?: ImageSize;
+}
+
 interface GeminiPart {
   text?: string;
   inlineData?: {
@@ -50,7 +58,8 @@ interface VideoOperationResponse {
 export async function editImage(
   images: ImageInput[],
   prompt: string,
-  mask?: ImageInput
+  mask?: ImageInput,
+  imageConfig?: ImageConfig
 ): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
 
   const imageParts: GeminiPart[] = images.map(image => {
@@ -91,6 +100,12 @@ export async function editImage(
         }],
         generationConfig: {
           responseModalities: ['IMAGE'],
+          ...(imageConfig && {
+            imageConfig: {
+              ...(imageConfig.aspectRatio && { aspectRatio: imageConfig.aspectRatio }),
+              ...(imageConfig.imageSize && { imageSize: imageConfig.imageSize }),
+            },
+          }),
         },
       }),
     });
@@ -139,7 +154,8 @@ export async function editImage(
 }
 
 export async function generateImageFromText(
-  prompt: string
+  prompt: string,
+  imageConfig?: ImageConfig
 ): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
   try {
     const response = await fetch(`${BASE_URL}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
@@ -156,6 +172,12 @@ export async function generateImageFromText(
         }],
         generationConfig: {
           responseModalities: ['IMAGE'],
+          ...(imageConfig && {
+            imageConfig: {
+              ...(imageConfig.aspectRatio && { aspectRatio: imageConfig.aspectRatio }),
+              ...(imageConfig.imageSize && { imageSize: imageConfig.imageSize }),
+            },
+          }),
         },
       }),
     });
