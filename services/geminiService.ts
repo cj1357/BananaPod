@@ -1,12 +1,11 @@
-const API_KEY = process.env.API_KEY;
-if (!API_KEY) {
-  throw new Error("API_KEY environment variable is not set");
-}
-
-// const BASE_URL = "https://generativelanguage.googleapis.com";
-const BASE_URL = process.env.BASE_URL || "https://generativelanguage.googleapis.com";
+const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 const IMAGE_MODEL = "gemini-3-pro-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
+
+export interface ApiConfig {
+  apiKey: string;
+  baseUrl?: string;
+}
 
 type ImageInput = {
   href: string;
@@ -56,11 +55,17 @@ interface VideoOperationResponse {
 }
 
 export async function editImage(
+  apiConfig: ApiConfig,
   images: ImageInput[],
   prompt: string,
   mask?: ImageInput,
   imageConfig?: ImageConfig
 ): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
+  if (!apiConfig.apiKey) {
+    throw new Error("API Key is not configured. Please set your API Key in Settings.");
+  }
+
+  const baseUrl = apiConfig.baseUrl || DEFAULT_BASE_URL;
 
   const imageParts: GeminiPart[] = images.map(image => {
     const dataUrlParts = image.href.split(',');
@@ -88,10 +93,10 @@ export async function editImage(
     : [...imageParts, textPart];
 
   try {
-    const response = await fetch(`${BASE_URL}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    const response = await fetch(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
       method: 'POST',
       headers: {
-        'x-goog-api-key': API_KEY,
+        'x-goog-api-key': apiConfig.apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -154,14 +159,21 @@ export async function editImage(
 }
 
 export async function generateImageFromText(
+  apiConfig: ApiConfig,
   prompt: string,
   imageConfig?: ImageConfig
 ): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
+  if (!apiConfig.apiKey) {
+    throw new Error("API Key is not configured. Please set your API Key in Settings.");
+  }
+
+  const baseUrl = apiConfig.baseUrl || DEFAULT_BASE_URL;
+
   try {
-    const response = await fetch(`${BASE_URL}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    const response = await fetch(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
       method: 'POST',
       headers: {
-        'x-goog-api-key': API_KEY,
+        'x-goog-api-key': apiConfig.apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -229,11 +241,18 @@ export async function generateImageFromText(
 }
 
 export async function generateVideo(
+  apiConfig: ApiConfig,
   prompt: string,
   aspectRatio: '16:9' | '9:16',
   onProgress: (message: string) => void,
   image?: ImageInput
 ): Promise<{ videoBlob: Blob; mimeType: string }> {
+  if (!apiConfig.apiKey) {
+    throw new Error("API Key is not configured. Please set your API Key in Settings.");
+  }
+
+  const baseUrl = apiConfig.baseUrl || DEFAULT_BASE_URL;
+
   onProgress('Initializing video generation...');
 
   // Build the instance object
@@ -251,10 +270,10 @@ export async function generateVideo(
 
   try {
     // Start video generation (long-running operation)
-    const startResponse = await fetch(`${BASE_URL}/v1beta/models/${VIDEO_MODEL}:predictLongRunning`, {
+    const startResponse = await fetch(`${baseUrl}/v1beta/models/${VIDEO_MODEL}:predictLongRunning`, {
       method: 'POST',
       headers: {
-        'x-goog-api-key': API_KEY,
+        'x-goog-api-key': apiConfig.apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -295,10 +314,10 @@ export async function generateVideo(
 
       await new Promise(resolve => setTimeout(resolve, 10000));
 
-      const statusResponse = await fetch(`${BASE_URL}/v1beta/${operationName}`, {
+      const statusResponse = await fetch(`${baseUrl}/v1beta/${operationName}`, {
         method: 'GET',
         headers: {
-          'x-goog-api-key': API_KEY,
+          'x-goog-api-key': apiConfig.apiKey,
         },
       });
 
@@ -324,7 +343,7 @@ export async function generateVideo(
         // Download the video using the URI with API key
         const videoResponse = await fetch(downloadLink, {
           headers: {
-            'x-goog-api-key': API_KEY,
+            'x-goog-api-key': apiConfig.apiKey,
           },
         });
 

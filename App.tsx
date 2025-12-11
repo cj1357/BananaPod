@@ -415,6 +415,10 @@ const App: React.FC = () => {
     const [imageSize, setImageSize] = useState<ImageSize>('1K');
     const [progressMessage, setProgressMessage] = useState<string>('');
     
+    // API Configuration
+    const [apiKey, setApiKey] = useState<string>('');
+    const [apiBaseUrl, setApiBaseUrl] = useState<string>('');
+    
     // Load data from IndexedDB on mount
     useEffect(() => {
         const initializeFromStorage = async () => {
@@ -448,6 +452,8 @@ const App: React.FC = () => {
                     if (savedSettings.videoAspectRatio) setVideoAspectRatio(savedSettings.videoAspectRatio);
                     if (savedSettings.imageAspectRatio) setImageAspectRatio(savedSettings.imageAspectRatio);
                     if (savedSettings.imageSize) setImageSize(savedSettings.imageSize);
+                    if (savedSettings.apiKey) setApiKey(savedSettings.apiKey);
+                    if (savedSettings.apiBaseUrl) setApiBaseUrl(savedSettings.apiBaseUrl);
                 }
             } catch (err) {
                 console.error('Failed to load data from IndexedDB:', err);
@@ -502,6 +508,8 @@ const App: React.FC = () => {
                 videoAspectRatio,
                 imageAspectRatio,
                 imageSize,
+                apiKey,
+                apiBaseUrl,
             };
             debouncedSaveSettings(settings);
         }
@@ -518,6 +526,8 @@ const App: React.FC = () => {
         videoAspectRatio,
         imageAspectRatio,
         imageSize,
+        apiKey,
+        apiBaseUrl,
     ]);
 
     const handleAddUserEffect = useCallback((effect: UserEffect) => {
@@ -1449,6 +1459,7 @@ const App: React.FC = () => {
                 }
                 
                 const { videoBlob, mimeType } = await generateVideo(
+                    { apiKey, baseUrl: apiBaseUrl || undefined },
                     prompt, 
                     videoAspectRatio, 
                     (message) => setProgressMessage(message), 
@@ -1532,6 +1543,7 @@ const App: React.FC = () => {
                         imageSize,
                     };
                     const result = await editImage(
+                        { apiKey, baseUrl: apiBaseUrl || undefined },
                         [{ href: baseImage.href, mimeType: baseImage.mimeType }],
                         prompt,
                         { href: maskData.href, mimeType: maskData.mimeType },
@@ -1579,7 +1591,7 @@ const App: React.FC = () => {
                     ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
                     imageSize,
                 };
-                const result = await editImage(imagesToProcess, prompt, undefined, imageConfigForEdit);
+                const result = await editImage({ apiKey, baseUrl: apiBaseUrl || undefined }, imagesToProcess, prompt, undefined, imageConfigForEdit);
 
                 if (result.newImageBase64 && result.newImageMimeType) {
                     const { newImageBase64, newImageMimeType } = result;
@@ -1616,7 +1628,7 @@ const App: React.FC = () => {
                     ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
                     imageSize,
                 };
-                const result = await generateImageFromText(prompt, imageConfigForGenerate);
+                const result = await generateImageFromText({ apiKey, baseUrl: apiBaseUrl || undefined }, prompt, imageConfigForGenerate);
 
                 if (result.newImageBase64 && result.newImageMimeType) {
                     const { newImageBase64, newImageMimeType } = result;
@@ -2041,6 +2053,10 @@ const App: React.FC = () => {
                 setButtonTheme={setButtonTheme}
                 wheelAction={wheelAction}
                 setWheelAction={setWheelAction}
+                apiKey={apiKey}
+                setApiKey={setApiKey}
+                apiBaseUrl={apiBaseUrl}
+                setApiBaseUrl={setApiBaseUrl}
                 t={t}
             />
             <Toolbar

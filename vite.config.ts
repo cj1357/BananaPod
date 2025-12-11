@@ -1,5 +1,5 @@
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 import os from 'node:os'; // 1. 引入 os 模块
@@ -10,29 +10,19 @@ try {
   os.networkInterfaces = () => ({});
 }
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, '.', '');
-  return {
-    server: {
-      port: 8085,
-      host: '127.0.0.1',
-      // --- 新增配置开始 ---
-      // 允许你的 frp 域名访问
-      allowedHosts: [
-        'pod.lordorange.top'
-      ],
-      // --- 新增配置结束 ---            
-    },
-    plugins: [react()],
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.BASE_URL': JSON.stringify(env.BASE_URL)
-    },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      }
+export default defineConfig({
+  server: {
+    port: 8085,
+    host: '127.0.0.1',
+    // 允许自定义域名访问
+    allowedHosts: [
+      'pod.lordorange.top'
+    ],
+  },
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, '.'),
     }
-  };
+  }
 });

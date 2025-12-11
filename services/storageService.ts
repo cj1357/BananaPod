@@ -17,6 +17,9 @@ export interface AppSettings {
   videoAspectRatio: '16:9' | '9:16';
   imageAspectRatio: ImageAspectRatio | 'auto';
   imageSize: ImageSize;
+  // API Configuration
+  apiKey: string;
+  apiBaseUrl: string;
 }
 
 let dbInstance: IDBDatabase | null = null;

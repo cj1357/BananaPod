@@ -16,6 +16,10 @@ interface CanvasSettingsProps {
     setButtonTheme: (theme: { color: string; opacity: number }) => void;
     wheelAction: WheelAction;
     setWheelAction: (action: WheelAction) => void;
+    apiKey: string;
+    setApiKey: (key: string) => void;
+    apiBaseUrl: string;
+    setApiBaseUrl: (url: string) => void;
     t: (key: string) => string;
 }
 
@@ -32,6 +36,10 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
     setButtonTheme,
     wheelAction,
     setWheelAction,
+    apiKey,
+    setApiKey,
+    apiBaseUrl,
+    setApiBaseUrl,
     t
 }) => {
     if (!isOpen) return null;
@@ -42,7 +50,7 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
             onClick={onClose}
         >
             <div 
-                className="relative p-6 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-col space-y-4 w-80 text-white"
+                className="relative p-6 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-col space-y-4 w-96 max-h-[90vh] overflow-y-auto text-white"
                 style={{ backgroundColor: 'var(--ui-bg-color)' }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -53,6 +61,35 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                     </button>
                 </div>
                 
+                <div className="border-t border-white/10 -mx-6"></div>
+
+                {/* API Settings */}
+                <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-300">{t('settings.apiSettings')}</h4>
+                    <div className="space-y-2">
+                        <label htmlFor="api-key" className="text-sm text-gray-300">{t('settings.apiKey')}</label>
+                        <input
+                            id="api-key"
+                            type="password"
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            placeholder={t('settings.apiKeyPlaceholder')}
+                            className="w-full px-3 py-2 bg-black/30 border border-white/10 rounded-md text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <label htmlFor="api-base-url" className="text-sm text-gray-300">{t('settings.apiBaseUrl')}</label>
+                        <input
+                            id="api-base-url"
+                            type="text"
+                            value={apiBaseUrl}
+                            onChange={(e) => setApiBaseUrl(e.target.value)}
+                            placeholder={t('settings.apiBaseUrlPlaceholder')}
+                            className="w-full px-3 py-2 bg-black/30 border border-white/10 rounded-md text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        />
+                    </div>
+                </div>
+
                 <div className="border-t border-white/10 -mx-6"></div>
 
                 {/* Language Settings */}
