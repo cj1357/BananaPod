@@ -1570,12 +1570,14 @@ const App: React.FC = () => {
                                 }).filter(el => !maskPathIds.has(el.id))
                             );
                             setSelectedElementIds([baseImage.id]);
+                            setIsLoading(false);
                         };
-                        img.onerror = () => setError('Failed to load the generated image.');
+                        img.onerror = () => { setError('Failed to load the generated image.'); setIsLoading(false); };
                         img.src = `data:${newImageMimeType};base64,${newImageBase64}`;
 
                     } else {
                         setError(result.textResponse || 'Inpainting failed to produce an image.');
+                        setIsLoading(false);
                     }
                     return; // End execution for inpainting path
                 }
@@ -1615,11 +1617,13 @@ const App: React.FC = () => {
                         };
                         commitAction(prev => [...prev, newImage]);
                         setSelectedElementIds([newImage.id]);
+                        setIsLoading(false);
                     };
-                    img.onerror = () => setError('Failed to load the generated image.');
+                    img.onerror = () => { setError('Failed to load the generated image.'); setIsLoading(false); };
                     img.src = `data:${newImageMimeType};base64,${newImageBase64}`;
                 } else {
                     setError(result.textResponse || 'Generation failed to produce an image.');
+                    setIsLoading(false);
                 }
 
             } else {
@@ -1635,7 +1639,10 @@ const App: React.FC = () => {
                     
                     const img = new Image();
                     img.onload = () => {
-                        if (!svgRef.current) return;
+                        if (!svgRef.current) {
+                            setIsLoading(false);
+                            return;
+                        }
                         const svgBounds = svgRef.current.getBoundingClientRect();
                         const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 };
                         const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y);
@@ -1649,11 +1656,13 @@ const App: React.FC = () => {
                         };
                         commitAction(prev => [...prev, newImage]);
                         setSelectedElementIds([newImage.id]);
+                        setIsLoading(false);
                     };
-                    img.onerror = () => setError('Failed to load the generated image.');
+                    img.onerror = () => { setError('Failed to load the generated image.'); setIsLoading(false); };
                     img.src = `data:${newImageMimeType};base64,${newImageBase64}`;
                 } else { 
-                    setError(result.textResponse || 'Generation failed to produce an image.'); 
+                    setError(result.textResponse || 'Generation failed to produce an image.');
+                    setIsLoading(false);
                 }
             }
         } catch (err) {
@@ -1666,8 +1675,7 @@ const App: React.FC = () => {
 
             setError(friendlyMessage); 
             console.error("Generation failed:", error);
-        } finally { 
-            setIsLoading(false); 
+            setIsLoading(false);
         }
     };
     

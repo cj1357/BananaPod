@@ -2,9 +2,37 @@ const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 const IMAGE_MODEL = "gemini-3-pro-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
 
+// Default timeout: 5 minutes for image generation
+const DEFAULT_TIMEOUT = 300000;
+
 export interface ApiConfig {
   apiKey: string;
   baseUrl?: string;
+}
+
+// Fetch with timeout support
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeout: number = DEFAULT_TIMEOUT
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeout / 1000} seconds. Please try again.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 type ImageInput = {
@@ -93,7 +121,7 @@ export async function editImage(
     : [...imageParts, textPart];
 
   try {
-    const response = await fetch(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'x-goog-api-key': apiConfig.apiKey,
@@ -170,7 +198,7 @@ export async function generateImageFromText(
   const baseUrl = apiConfig.baseUrl || DEFAULT_BASE_URL;
 
   try {
-    const response = await fetch(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
       method: 'POST',
       headers: {
         'x-goog-api-key': apiConfig.apiKey,
@@ -269,8 +297,8 @@ export async function generateVideo(
   }
 
   try {
-    // Start video generation (long-running operation)
-    const startResponse = await fetch(`${baseUrl}/v1beta/models/${VIDEO_MODEL}:predictLongRunning`, {
+    // Start video generation (long-running operation) - 60s timeout for initial request
+    const startResponse = await fetchWithTimeout(`${baseUrl}/v1beta/models/${VIDEO_MODEL}:predictLongRunning`, {
       method: 'POST',
       headers: {
         'x-goog-api-key': apiConfig.apiKey,
@@ -283,7 +311,7 @@ export async function generateVideo(
           sampleCount: 1,
         }
       }),
-    });
+    }, 60000);
 
     if (!startResponse.ok) {
       const errorText = await startResponse.text();
@@ -314,12 +342,13 @@ export async function generateVideo(
 
       await new Promise(resolve => setTimeout(resolve, 10000));
 
-      const statusResponse = await fetch(`${baseUrl}/v1beta/${operationName}`, {
+      // 30s timeout for status checks
+      const statusResponse = await fetchWithTimeout(`${baseUrl}/v1beta/${operationName}`, {
         method: 'GET',
         headers: {
           'x-goog-api-key': apiConfig.apiKey,
         },
-      });
+      }, 30000);
 
       if (!statusResponse.ok) {
         const errorText = await statusResponse.text();
@@ -340,12 +369,12 @@ export async function generateVideo(
 
         onProgress('Downloading generated video...');
         
-        // Download the video using the URI with API key
-        const videoResponse = await fetch(downloadLink, {
+        // Download the video using the URI with API key - 5 minute timeout for video download
+        const videoResponse = await fetchWithTimeout(downloadLink, {
           headers: {
             'x-goog-api-key': apiConfig.apiKey,
           },
-        });
+        }, 300000);
 
         if (!videoResponse.ok) {
           throw new Error(`Failed to download video: ${videoResponse.statusText}`);
