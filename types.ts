@@ -35,7 +35,7 @@ export interface ImageElement extends CanvasElementBase {
 
 export interface VideoElement extends CanvasElementBase {
   type: 'video';
-  href: string; // Blob URL
+  href: string; // Data URL (base64)
   width: number;
   height: number;
   mimeType: string;

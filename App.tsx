@@ -13,8 +13,14 @@ import { LayerPanel } from './components/LayerPanel';
 import { BoardPanel } from './components/BoardPanel';
 import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, TextElement, ArrowElement, UserEffect, LineElement, WheelAction, GroupElement, Board, VideoElement, ImageAspectRatio, ImageSize } from './types';
 import { editImage, generateImageFromText, generateVideo } from './services/geminiService';
-import { fileToDataUrl } from './utils/fileUtils';
+import { fileToDataUrl, blobToDataUrl } from './utils/fileUtils';
 import { translations } from './translations';
+import { loadBoards, loadSettings, debouncedSaveBoards, debouncedSaveSettings, clearAllData, type AppSettings } from './services/storageService';
+
+// Expose clearAllData for debugging (can be called from browser console)
+if (typeof window !== 'undefined') {
+    (window as unknown as { clearBananaPodData: typeof clearAllData }).clearBananaPodData = clearAllData;
+}
 
 const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -355,15 +361,30 @@ const createNewBoard = (name: string): Board => {
 };
 
 const App: React.FC = () => {
-    const [boards, setBoards] = useState<Board[]>(() => {
-        // TODO: Load from localStorage
-        return [createNewBoard('Board 1')];
-    });
+    // Initialization state
+    const [isInitializing, setIsInitializing] = useState(true);
+    
+    const [boards, setBoards] = useState<Board[]>(() => [createNewBoard('Board 1')]);
     const [activeBoardId, setActiveBoardId] = useState<string>(boards[0].id);
 
-    const activeBoard = useMemo(() => boards.find(b => b.id === activeBoardId)!, [boards, activeBoardId]);
+    // Ensure activeBoard is always valid - fallback to first board or create a new one
+    const activeBoard = useMemo(() => {
+        const found = boards.find(b => b.id === activeBoardId);
+        if (found) return found;
+        // Fallback to first board if activeBoardId is invalid
+        if (boards.length > 0) return boards[0];
+        // Ultimate fallback: create a new board (should never happen)
+        return createNewBoard('Board 1');
+    }, [boards, activeBoardId]);
 
-    const { elements, history, historyIndex, panOffset, zoom, canvasBackgroundColor } = activeBoard;
+    const { elements, history, historyIndex, panOffset, zoom, canvasBackgroundColor } = activeBoard || {
+        elements: [],
+        history: [[]],
+        historyIndex: 0,
+        panOffset: { x: 0, y: 0 },
+        zoom: 1,
+        canvasBackgroundColor: '#111827'
+    };
 
     const [activeTool, setActiveTool] = useState<Tool>('select');
     const [drawingOptions, setDrawingOptions] = useState({ strokeColor: '#FFFFFF', strokeWidth: 5 });
@@ -386,21 +407,57 @@ const App: React.FC = () => {
     const [uiTheme, setUiTheme] = useState({ color: '#171717', opacity: 0.7 });
     const [buttonTheme, setButtonTheme] = useState({ color: '#374151', opacity: 0.8 });
     
-    const [userEffects, setUserEffects] = useState<UserEffect[]>(() => {
-        try {
-            const saved = localStorage.getItem('userEffects');
-            return saved ? JSON.parse(saved) : [];
-        } catch (error) {
-            console.error("Failed to parse user effects from localStorage", error);
-            return [];
-        }
-    });
+    const [userEffects, setUserEffects] = useState<UserEffect[]>([]);
     
     const [generationMode, setGenerationMode] = useState<'image' | 'video'>('image');
     const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
     const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio | 'auto'>('auto');
     const [imageSize, setImageSize] = useState<ImageSize>('1K');
     const [progressMessage, setProgressMessage] = useState<string>('');
+    
+    // Load data from IndexedDB on mount
+    useEffect(() => {
+        const initializeFromStorage = async () => {
+            try {
+                // Load boards and settings in parallel
+                const [savedBoards, savedSettings] = await Promise.all([
+                    loadBoards(),
+                    loadSettings()
+                ]);
+                
+                // Set boards first
+                if (savedBoards && savedBoards.length > 0) {
+                    setBoards(savedBoards);
+                    // Set activeBoardId to match loaded boards
+                    if (savedSettings?.activeBoardId && savedBoards.some(b => b.id === savedSettings.activeBoardId)) {
+                        setActiveBoardId(savedSettings.activeBoardId);
+                    } else {
+                        setActiveBoardId(savedBoards[0].id);
+                    }
+                }
+                
+                // Apply other settings
+                if (savedSettings) {
+                    if (savedSettings.language) setLanguage(savedSettings.language);
+                    if (savedSettings.uiTheme) setUiTheme(savedSettings.uiTheme);
+                    if (savedSettings.buttonTheme) setButtonTheme(savedSettings.buttonTheme);
+                    if (savedSettings.drawingOptions) setDrawingOptions(savedSettings.drawingOptions);
+                    if (savedSettings.wheelAction) setWheelAction(savedSettings.wheelAction);
+                    if (savedSettings.userEffects) setUserEffects(savedSettings.userEffects);
+                    if (savedSettings.generationMode) setGenerationMode(savedSettings.generationMode);
+                    if (savedSettings.videoAspectRatio) setVideoAspectRatio(savedSettings.videoAspectRatio);
+                    if (savedSettings.imageAspectRatio) setImageAspectRatio(savedSettings.imageAspectRatio);
+                    if (savedSettings.imageSize) setImageSize(savedSettings.imageSize);
+                }
+            } catch (err) {
+                console.error('Failed to load data from IndexedDB:', err);
+            } finally {
+                setIsInitializing(false);
+            }
+        };
+        
+        initializeFromStorage();
+    }, []);
 
     const interactionMode = useRef<string | null>(null);
     const startPoint = useRef<Point>({ x: 0, y: 0 });
@@ -423,13 +480,45 @@ const App: React.FC = () => {
         setPrompt('');
     }, [activeBoardId]);
     
+    // Auto-save boards to IndexedDB (debounced)
     useEffect(() => {
-        try {
-            localStorage.setItem('userEffects', JSON.stringify(userEffects));
-        } catch (error) {
-            console.error("Failed to save user effects to localStorage", error);
+        if (!isInitializing) {
+            debouncedSaveBoards(boards);
         }
-    }, [userEffects]);
+    }, [boards, isInitializing]);
+    
+    // Auto-save settings to IndexedDB (debounced)
+    useEffect(() => {
+        if (!isInitializing) {
+            const settings: Partial<AppSettings> = {
+                activeBoardId,
+                language,
+                uiTheme,
+                buttonTheme,
+                drawingOptions,
+                wheelAction,
+                userEffects,
+                generationMode,
+                videoAspectRatio,
+                imageAspectRatio,
+                imageSize,
+            };
+            debouncedSaveSettings(settings);
+        }
+    }, [
+        isInitializing,
+        activeBoardId,
+        language,
+        uiTheme,
+        buttonTheme,
+        drawingOptions,
+        wheelAction,
+        userEffects,
+        generationMode,
+        videoAspectRatio,
+        imageAspectRatio,
+        imageSize,
+    ]);
 
     const handleAddUserEffect = useCallback((effect: UserEffect) => {
         setUserEffects(prev => [...prev, effect]);
@@ -1367,7 +1456,8 @@ const App: React.FC = () => {
                 );
 
                 setProgressMessage('Processing video...');
-                const videoUrl = URL.createObjectURL(videoBlob);
+                // Convert blob to data URL for persistence
+                const videoDataUrl = await blobToDataUrl(videoBlob);
                 const video = document.createElement('video');
                 
                 video.onloadedmetadata = () => {
@@ -1398,7 +1488,7 @@ const App: React.FC = () => {
                         x, y,
                         width: newWidth,
                         height: newHeight,
-                        href: videoUrl,
+                        href: videoDataUrl,
                         mimeType,
                     };
 
@@ -1412,7 +1502,7 @@ const App: React.FC = () => {
                     setIsLoading(false);
                 };
                 
-                video.src = videoUrl;
+                video.src = videoDataUrl;
 
             } catch (err) {
                  const error = err as Error; 
@@ -1902,6 +1992,18 @@ const App: React.FC = () => {
         const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMB_WIDTH}" height="${THUMB_HEIGHT}"><rect width="100%" height="100%" fill="${bgColor}" /><g transform="translate(${dx} ${dy}) scale(${scale})">${svgContent}</g></svg>`;
         return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(fullSvg)))}`;
     }, []);
+
+    // Show loading screen while initializing from IndexedDB
+    if (isInitializing) {
+        return (
+            <div className="w-screen h-screen flex items-center justify-center bg-gray-900">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-600 border-t-white mx-auto mb-4"></div>
+                    <p className="text-gray-400">{language === 'zho' ? '正在加载...' : 'Loading...'}</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="w-screen h-screen flex flex-col font-sans" style={{ backgroundColor: canvasBackgroundColor }} onDragOver={handleDragOver} onDrop={handleDrop}>
