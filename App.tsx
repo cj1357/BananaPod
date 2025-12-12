@@ -15,11 +15,12 @@ import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, Tex
 import { editImage, generateImageFromText, generateVideo } from './services/geminiService';
 import { fileToDataUrl, blobToDataUrl } from './utils/fileUtils';
 import { translations } from './translations';
-import { loadBoards, loadSettings, debouncedSaveBoards, debouncedSaveSettings, clearAllData, type AppSettings } from './services/storageService';
+import { loadBoards, loadSettings, debouncedSaveBoards, debouncedSaveSettings, clearAllData, requestPersistentStorage, getStorageInfo, type AppSettings } from './services/storageService';
 
 // Expose clearAllData for debugging (can be called from browser console)
 if (typeof window !== 'undefined') {
     (window as unknown as { clearBananaPodData: typeof clearAllData }).clearBananaPodData = clearAllData;
+    (window as unknown as { getStorageInfo: typeof getStorageInfo }).getStorageInfo = getStorageInfo;
 }
 
 const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -423,6 +424,12 @@ const App: React.FC = () => {
     useEffect(() => {
         const initializeFromStorage = async () => {
             try {
+                // Request persistent storage to prevent browser from clearing data
+                const isPersistent = await requestPersistentStorage();
+                if (!isPersistent) {
+                    console.warn('Persistent storage not granted - your data may be cleared by the browser over time');
+                }
+                
                 // Load boards and settings in parallel
                 const [savedBoards, savedSettings] = await Promise.all([
                     loadBoards(),

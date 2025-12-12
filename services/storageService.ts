@@ -23,6 +23,54 @@ export interface AppSettings {
 }
 
 let dbInstance: IDBDatabase | null = null;
+let persistenceRequested = false;
+
+// Request persistent storage to prevent browser from clearing IndexedDB data
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (persistenceRequested) return true;
+  
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      const isPersisted = await navigator.storage.persisted();
+      if (isPersisted) {
+        console.log('Storage is already persistent');
+        persistenceRequested = true;
+        return true;
+      }
+      
+      const granted = await navigator.storage.persist();
+      if (granted) {
+        console.log('Persistent storage granted');
+        persistenceRequested = true;
+        return true;
+      } else {
+        console.warn('Persistent storage denied - data may be cleared by browser');
+        return false;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to request persistent storage:', error);
+  }
+  return false;
+}
+
+// Check storage usage
+export async function getStorageInfo(): Promise<{ used: number; quota: number; persistent: boolean } | null> {
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const estimate = await navigator.storage.estimate();
+      const persisted = await navigator.storage.persisted?.() ?? false;
+      return {
+        used: estimate.usage || 0,
+        quota: estimate.quota || 0,
+        persistent: persisted
+      };
+    }
+  } catch (error) {
+    console.error('Failed to get storage info:', error);
+  }
+  return null;
+}
 
 function openDB(): Promise<IDBDatabase> {
   if (dbInstance) {
