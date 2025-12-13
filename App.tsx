@@ -94,12 +94,12 @@ const rasterizeElement = (element: Exclude<Element, ImageElement | VideoElement>
         const padding = 10;
         const svgWidth = bounds.width + padding * 2;
         const svgHeight = bounds.height + padding * 2;
-        
+
         const offsetX = -bounds.x + padding;
         const offsetY = -bounds.y + padding;
 
         let elementSvgString = '';
-        
+
         switch (element.type) {
             case 'path': {
                 const pointsWithOffset = element.points.map(p => ({ x: p.x + offsetX, y: p.y + offsetY }));
@@ -110,44 +110,44 @@ const rasterizeElement = (element: Exclude<Element, ImageElement | VideoElement>
             case 'shape': {
                 const shapeProps = `transform="translate(${element.x + offsetX}, ${element.y + offsetY})" fill="${element.fillColor}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}"`;
                 if (element.shapeType === 'rectangle') elementSvgString = `<rect width="${element.width}" height="${element.height}" rx="${element.borderRadius || 0}" ry="${element.borderRadius || 0}" ${shapeProps} />`;
-                else if (element.shapeType === 'circle') elementSvgString = `<ellipse cx="${element.width/2}" cy="${element.height/2}" rx="${element.width/2}" ry="${element.height/2}" ${shapeProps} />`;
-                else if (element.shapeType === 'triangle') elementSvgString = `<polygon points="${element.width/2},0 0,${element.height} ${element.width},${element.height}" ${shapeProps} />`;
+                else if (element.shapeType === 'circle') elementSvgString = `<ellipse cx="${element.width / 2}" cy="${element.height / 2}" rx="${element.width / 2}" ry="${element.height / 2}" ${shapeProps} />`;
+                else if (element.shapeType === 'triangle') elementSvgString = `<polygon points="${element.width / 2},0 0,${element.height} ${element.width},${element.height}" ${shapeProps} />`;
                 break;
             }
             case 'arrow': {
-                 const [start, end] = element.points;
-                 const angle = Math.atan2(end.y - start.y, end.x - start.x);
-                 const headLength = element.strokeWidth * 4;
+                const [start, end] = element.points;
+                const angle = Math.atan2(end.y - start.y, end.x - start.x);
+                const headLength = element.strokeWidth * 4;
 
-                 const arrowHeadHeight = headLength * Math.cos(Math.PI / 6);
-                 const lineEnd = {
-                     x: end.x - arrowHeadHeight * Math.cos(angle),
-                     y: end.y - arrowHeadHeight * Math.sin(angle),
-                 };
+                const arrowHeadHeight = headLength * Math.cos(Math.PI / 6);
+                const lineEnd = {
+                    x: end.x - arrowHeadHeight * Math.cos(angle),
+                    y: end.y - arrowHeadHeight * Math.sin(angle),
+                };
 
-                 const headPoint1 = { x: end.x - headLength * Math.cos(angle - Math.PI / 6), y: end.y - headLength * Math.sin(angle - Math.PI / 6) };
-                 const headPoint2 = { x: end.x - headLength * Math.cos(angle + Math.PI / 6), y: end.y - headLength * Math.sin(angle + Math.PI / 6) };
-                 elementSvgString = `
+                const headPoint1 = { x: end.x - headLength * Math.cos(angle - Math.PI / 6), y: end.y - headLength * Math.sin(angle - Math.PI / 6) };
+                const headPoint2 = { x: end.x - headLength * Math.cos(angle + Math.PI / 6), y: end.y - headLength * Math.sin(angle + Math.PI / 6) };
+                elementSvgString = `
                     <line x1="${start.x + offsetX}" y1="${start.y + offsetY}" x2="${lineEnd.x + offsetX}" y2="${lineEnd.y + offsetY}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}" stroke-linecap="round" />
                     <polygon points="${end.x + offsetX},${end.y + offsetY} ${headPoint1.x + offsetX},${headPoint1.y + offsetY} ${headPoint2.x + offsetX},${headPoint2.y + offsetY}" fill="${element.strokeColor}" />
                  `;
                 break;
             }
             case 'line': {
-                 const [start, end] = element.points;
-                 elementSvgString = `<line x1="${start.x + offsetX}" y1="${start.y + offsetY}" x2="${end.x + offsetX}" y2="${end.y + offsetY}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}" stroke-linecap="round" />`;
+                const [start, end] = element.points;
+                elementSvgString = `<line x1="${start.x + offsetX}" y1="${start.y + offsetY}" x2="${end.x + offsetX}" y2="${end.y + offsetY}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}" stroke-linecap="round" />`;
                 break;
             }
             case 'text': {
-                 elementSvgString = `
+                elementSvgString = `
                     <foreignObject x="${offsetX}" y="${offsetY}" width="${element.width}" height="${element.height}">
                         <div xmlns="http://www.w3.org/1999/xhtml" style="font-size: ${element.fontSize}px; color: ${element.fontColor}; width: 100%; height: 100%; word-break: break-word; font-family: sans-serif; padding:0; margin:0; line-height: 1.2;">
                             ${element.text.replace(/\n/g, '<br />')}
                         </div>
                     </foreignObject>
                  `;
-                 // Note: Text is rasterized from its top-left corner (x,y), not the bounds' corner
-                 elementSvgString = elementSvgString.replace(`x="${offsetX}"`, `x="${element.x + offsetX}"`).replace(`y="${offsetY}"`, `y="${element.y + offsetY}"`);
+                // Note: Text is rasterized from its top-left corner (x,y), not the bounds' corner
+                elementSvgString = elementSvgString.replace(`x="${offsetX}"`, `x="${element.x + offsetX}"`).replace(`y="${offsetY}"`, `y="${element.y + offsetY}"`);
                 break;
             }
             case 'group': {
@@ -157,7 +157,7 @@ const rasterizeElement = (element: Exclude<Element, ImageElement | VideoElement>
         }
 
         const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}">${elementSvgString}</svg>`;
-        
+
         const img = new Image();
         img.crossOrigin = "anonymous";
         const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(fullSvg)))}`;
@@ -206,52 +206,52 @@ const rasterizeElements = (elementsToRasterize: Exclude<Element, ImageElement | 
         const padding = 10;
         const svgWidth = combinedWidth + padding * 2;
         const svgHeight = combinedHeight + padding * 2;
-        
+
         const elementSvgStrings = elementsToRasterize.map(element => {
             const offsetX = -minX + padding;
             const offsetY = -minY + padding;
 
             let elementSvgString = '';
             switch (element.type) {
-                 case 'path': {
+                case 'path': {
                     const pointsWithOffset = element.points.map(p => ({ x: p.x + offsetX, y: p.y + offsetY }));
                     const pathData = pointsWithOffset.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
                     elementSvgString = `<path d="${pathData}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${element.strokeOpacity || 1}" />`;
                     break;
-                 }
+                }
                 case 'shape': {
                     const shapeProps = `transform="translate(${element.x + offsetX}, ${element.y + offsetY})" fill="${element.fillColor}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}"`;
                     if (element.shapeType === 'rectangle') elementSvgString = `<rect width="${element.width}" height="${element.height}" rx="${element.borderRadius || 0}" ry="${element.borderRadius || 0}" ${shapeProps} />`;
-                    else if (element.shapeType === 'circle') elementSvgString = `<ellipse cx="${element.width/2}" cy="${element.height/2}" rx="${element.width/2}" ry="${element.height/2}" ${shapeProps} />`;
-                    else if (element.shapeType === 'triangle') elementSvgString = `<polygon points="${element.width/2},0 0,${element.height} ${element.width},${element.height}" ${shapeProps} />`;
+                    else if (element.shapeType === 'circle') elementSvgString = `<ellipse cx="${element.width / 2}" cy="${element.height / 2}" rx="${element.width / 2}" ry="${element.height / 2}" ${shapeProps} />`;
+                    else if (element.shapeType === 'triangle') elementSvgString = `<polygon points="${element.width / 2},0 0,${element.height} ${element.width},${element.height}" ${shapeProps} />`;
                     break;
                 }
                 case 'arrow': {
-                     const [start, end] = element.points;
-                     const angle = Math.atan2(end.y - start.y, end.x - start.x);
-                     const headLength = element.strokeWidth * 4;
+                    const [start, end] = element.points;
+                    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+                    const headLength = element.strokeWidth * 4;
 
-                     const arrowHeadHeight = headLength * Math.cos(Math.PI / 6);
-                     const lineEnd = {
+                    const arrowHeadHeight = headLength * Math.cos(Math.PI / 6);
+                    const lineEnd = {
                         x: end.x - arrowHeadHeight * Math.cos(angle),
                         y: end.y - arrowHeadHeight * Math.sin(angle),
-                     };
+                    };
 
-                     const headPoint1 = { x: end.x - headLength * Math.cos(angle - Math.PI / 6), y: end.y - headLength * Math.sin(angle - Math.PI / 6) };
-                     const headPoint2 = { x: end.x - headLength * Math.cos(angle + Math.PI / 6), y: end.y - headLength * Math.sin(angle + Math.PI / 6) };
-                     elementSvgString = `
+                    const headPoint1 = { x: end.x - headLength * Math.cos(angle - Math.PI / 6), y: end.y - headLength * Math.sin(angle - Math.PI / 6) };
+                    const headPoint2 = { x: end.x - headLength * Math.cos(angle + Math.PI / 6), y: end.y - headLength * Math.sin(angle + Math.PI / 6) };
+                    elementSvgString = `
                         <line x1="${start.x + offsetX}" y1="${start.y + offsetY}" x2="${lineEnd.x + offsetX}" y2="${lineEnd.y + offsetY}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}" stroke-linecap="round" />
                         <polygon points="${end.x + offsetX},${end.y + offsetY} ${headPoint1.x + offsetX},${headPoint1.y + offsetY} ${headPoint2.x + offsetX},${headPoint2.y + offsetY}" fill="${element.strokeColor}" />
                      `;
                     break;
                 }
-                 case 'line': {
-                     const [start, end] = element.points;
-                     elementSvgString = `<line x1="${start.x + offsetX}" y1="${start.y + offsetY}" x2="${end.x + offsetX}" y2="${end.y + offsetY}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}" stroke-linecap="round" />`;
+                case 'line': {
+                    const [start, end] = element.points;
+                    elementSvgString = `<line x1="${start.x + offsetX}" y1="${start.y + offsetY}" x2="${end.x + offsetX}" y2="${end.y + offsetY}" stroke="${element.strokeColor}" stroke-width="${element.strokeWidth}" stroke-linecap="round" />`;
                     break;
-                 }
+                }
                 case 'text': {
-                     elementSvgString = `
+                    elementSvgString = `
                         <foreignObject x="${element.x + offsetX}" y="${element.y + offsetY}" width="${element.width}" height="${element.height}">
                             <div xmlns="http://www.w3.org/1999/xhtml" style="font-size: ${element.fontSize}px; color: ${element.fontColor}; width: 100%; height: 100%; word-break: break-word; font-family: sans-serif; padding:0; margin:0; line-height: 1.2;">
                                 ${element.text.replace(/\n/g, '<br />')}
@@ -269,7 +269,7 @@ const rasterizeElements = (elementsToRasterize: Exclude<Element, ImageElement | 
         }).join('');
 
         const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}">${elementSvgStrings}</svg>`;
-        
+
         const img = new Image();
         img.crossOrigin = "anonymous";
         const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(fullSvg)))}`;
@@ -281,8 +281,8 @@ const rasterizeElements = (elementsToRasterize: Exclude<Element, ImageElement | 
             const ctx = canvas.getContext('2d');
             if (ctx) {
                 ctx.drawImage(img, 0, 0);
-                resolve({ 
-                    href: canvas.toDataURL('image/png'), 
+                resolve({
+                    href: canvas.toDataURL('image/png'),
                     mimeType: 'image/png',
                     width: svgWidth,
                     height: svgHeight
@@ -329,7 +329,7 @@ const rasterizeMask = (
         maskPaths.forEach(path => {
             ctx.lineWidth = path.strokeWidth;
             ctx.beginPath();
-            
+
             if (path.points.length === 1) {
                 const point = path.points[0];
                 ctx.arc(point.x - imageX, point.y - imageY, path.strokeWidth / 2, 0, 2 * Math.PI);
@@ -370,7 +370,7 @@ const App: React.FC = () => {
     // Auth gate (per-user access key)
     const [isAuthed, setIsAuthed] = useState(false);
     const [isAuthChecking, setIsAuthChecking] = useState(true);
-    
+
     const [boards, setBoards] = useState<Board[]>(() => [createNewBoard('Board 1')]);
     const [activeBoardId, setActiveBoardId] = useState<string>(boards[0].id);
 
@@ -414,16 +414,16 @@ const App: React.FC = () => {
     const [language, setLanguage] = useState<'en' | 'zho'>('zho');
     const [uiTheme, setUiTheme] = useState({ color: '#171717', opacity: 0.7 });
     const [buttonTheme, setButtonTheme] = useState({ color: '#374151', opacity: 0.8 });
-    
+
     const [userEffects, setUserEffects] = useState<UserEffect[]>([]);
-    
+
     const [generationMode, setGenerationMode] = useState<'image' | 'video'>('image');
     const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
     const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio | 'auto'>('auto');
     const [imageSize, setImageSize] = useState<ImageSize>('1K');
     const [imageCount, setImageCount] = useState<number>(2);
     const [progressMessage, setProgressMessage] = useState<string>('');
-    
+
     // API Configuration
     // (Moved to Worker; no client-side API key)
 
@@ -448,7 +448,7 @@ const App: React.FC = () => {
         };
         run();
     }, []);
-    
+
     // Load data from IndexedDB on mount
     useEffect(() => {
         const initializeFromStorage = async () => {
@@ -458,13 +458,13 @@ const App: React.FC = () => {
                 if (!isPersistent) {
                     console.warn('Persistent storage not granted - your data may be cleared by the browser over time');
                 }
-                
+
                 // Load boards and settings in parallel
                 const [savedBoards, savedSettings] = await Promise.all([
                     loadBoards(),
                     loadSettings()
                 ]);
-                
+
                 // Set boards first
                 if (savedBoards && savedBoards.length > 0) {
                     setBoards(savedBoards);
@@ -475,7 +475,7 @@ const App: React.FC = () => {
                         setActiveBoardId(savedBoards[0].id);
                     }
                 }
-                
+
                 // Apply other settings
                 if (savedSettings) {
                     if (savedSettings.language) setLanguage(savedSettings.language);
@@ -496,7 +496,7 @@ const App: React.FC = () => {
                 setIsInitializing(false);
             }
         };
-        
+
         initializeFromStorage();
     }, []);
 
@@ -505,7 +505,7 @@ const App: React.FC = () => {
     const currentDrawingElementId = useRef<string | null>(null);
     const resizeStartInfo = useRef<{ originalElement: ImageElement | ShapeElement | TextElement | VideoElement; startCanvasPoint: Point; handle: string; shiftKey: boolean } | null>(null);
     const cropStartInfo = useRef<{ originalCropBox: Rect, startCanvasPoint: Point } | null>(null);
-    const dragStartElementPositions = useRef<Map<string, {x: number, y: number} | Point[]>>(new Map());
+    const dragStartElementPositions = useRef<Map<string, { x: number, y: number } | Point[]>>(new Map());
     const elementsRef = useRef(elements);
     const svgRef = useRef<SVGSVGElement>(null);
     const editingTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -521,14 +521,14 @@ const App: React.FC = () => {
         setSelectionBox(null);
         setPrompt('');
     }, [activeBoardId]);
-    
+
     // Auto-save boards to IndexedDB (debounced)
     useEffect(() => {
         if (!isInitializing) {
             debouncedSaveBoards(boards);
         }
     }, [boards, isInitializing]);
-    
+
     // Auto-save settings to IndexedDB (debounced)
     useEffect(() => {
         if (!isInitializing) {
@@ -617,9 +617,9 @@ const App: React.FC = () => {
                     historyIndex: newHistory.length - 1,
                 };
             } else {
-                 const tempHistory = [...board.history];
-                 tempHistory[board.historyIndex] = newElements;
-                 return { ...board, elements: newElements, history: tempHistory };
+                const tempHistory = [...board.history];
+                tempHistory[board.historyIndex] = newElements;
+                return { ...board, elements: newElements, history: tempHistory };
             }
         });
     };
@@ -699,7 +699,7 @@ const App: React.FC = () => {
             })();
         }
     }, [elements, imageSize, isInitializing]);
-    
+
     const commitAction = useCallback((updater: (prev: Element[]) => Element[]) => {
         updateActiveBoard(board => {
             const newElements = updater(board.elements);
@@ -750,7 +750,7 @@ const App: React.FC = () => {
                 ? { ...el, text: editingElement.text }
                 // Persist auto-height change on blur
                 : el.id === editingElement.id && el.type === 'text' && editingTextareaRef.current ? { ...el, text: editingElement.text, height: editingTextareaRef.current.scrollHeight }
-                : el
+                    : el
         ));
         setEditingElement(null);
     }, [commitAction, editingElement]);
@@ -758,7 +758,7 @@ const App: React.FC = () => {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (editingElement) {
-                if(e.key === 'Escape') handleStopEditing();
+                if (e.key === 'Escape') handleStopEditing();
                 return;
             }
 
@@ -767,7 +767,7 @@ const App: React.FC = () => {
 
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); handleUndo(); return; }
             if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); handleRedo(); return; }
-            
+
             if (!isTyping && (e.key === 'Delete' || e.key === 'Backspace') && selectedElementIds.length > 0) {
                 e.preventDefault();
                 commitAction(prev => {
@@ -796,12 +796,12 @@ const App: React.FC = () => {
                 const target = e.target as HTMLElement;
                 const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
                 if (isTyping || spacebarDownTime.current === null) return;
-                
+
                 e.preventDefault();
 
                 const duration = Date.now() - spacebarDownTime.current;
                 spacebarDownTime.current = null;
-                
+
                 const toolBeforePan = previousToolRef.current;
 
                 if (duration < 200) { // Tap
@@ -826,13 +826,13 @@ const App: React.FC = () => {
             window.removeEventListener('keyup', handleKeyUp);
         };
     }, [handleUndo, handleRedo, selectedElementIds, editingElement, activeTool, commitAction, getDescendants, handleStopEditing]);
-    
+
     const getCanvasPoint = useCallback((screenX: number, screenY: number): Point => {
         if (!svgRef.current) return { x: 0, y: 0 };
         const svgBounds = svgRef.current.getBoundingClientRect();
         const xOnSvg = screenX - svgBounds.left;
         const yOnSvg = screenY - svgBounds.top;
-        
+
         return {
             x: (xOnSvg - panOffset.x) / zoom,
             y: (yOnSvg - panOffset.y) / zoom,
@@ -877,7 +877,7 @@ const App: React.FC = () => {
         }
     }, [getCanvasPoint, activeBoardId, setElements]);
 
-     const getSelectableElement = (elementId: string, allElements: Element[]): Element | null => {
+    const getSelectableElement = (elementId: string, allElements: Element[]): Element | null => {
         const element = allElements.find(el => el.id === elementId);
         if (!element) return null;
         if (element.isLocked) return null;
@@ -891,7 +891,7 @@ const App: React.FC = () => {
         }
         return current;
     };
-    
+
     const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
         if (editingElement) return;
         if (contextMenu) setContextMenu(null);
@@ -910,13 +910,13 @@ const App: React.FC = () => {
         const handleName = target.getAttribute('data-handle');
 
         if (croppingState) {
-             if (handleName) {
-                 interactionMode.current = `crop-${handleName}`;
-                 cropStartInfo.current = { originalCropBox: { ...croppingState.cropBox }, startCanvasPoint: canvasStartPoint };
-             }
-             return;
+            if (handleName) {
+                interactionMode.current = `crop-${handleName}`;
+                cropStartInfo.current = { originalCropBox: { ...croppingState.cropBox }, startCanvasPoint: canvasStartPoint };
+            }
+            return;
         }
-         if (activeTool === 'text') {
+        if (activeTool === 'text') {
             const newText: TextElement = {
                 id: generateId(), type: 'text', name: 'Text',
                 x: canvasStartPoint.x, y: canvasStartPoint.y,
@@ -934,7 +934,7 @@ const App: React.FC = () => {
             interactionMode.current = 'pan';
             return;
         }
-        
+
         if (handleName && activeTool === 'select' && selectedElementIds.length === 1) {
             interactionMode.current = `resize-${handleName}`;
             const element = elements.find(el => el.id === selectedElementIds[0]) as ImageElement | ShapeElement | TextElement | VideoElement;
@@ -956,7 +956,7 @@ const App: React.FC = () => {
                 strokeColor: drawingOptions.strokeColor,
                 strokeWidth: drawingOptions.strokeWidth,
                 strokeOpacity: activeTool === 'highlighter' ? 0.5 : 1,
-                x: 0, y: 0 
+                x: 0, y: 0
             };
             currentDrawingElementId.current = newPath.id;
             setElements(prev => [...prev, newPath], false);
@@ -1008,30 +1008,30 @@ const App: React.FC = () => {
 
             if (selectableElementId) {
                 if (e.detail === 2 && elements.find(el => el.id === selectableElementId)?.type === 'text') {
-                     const textEl = elements.find(el => el.id === selectableElementId) as TextElement;
-                     setEditingElement({ id: textEl.id, text: textEl.text });
-                     return;
+                    const textEl = elements.find(el => el.id === selectableElementId) as TextElement;
+                    setEditingElement({ id: textEl.id, text: textEl.text });
+                    return;
                 }
                 if (!e.shiftKey && !selectedElementIds.includes(selectableElementId)) {
-                     setSelectedElementIds([selectableElementId]);
+                    setSelectedElementIds([selectableElementId]);
                 } else if (e.shiftKey) {
-                    setSelectedElementIds(prev => 
+                    setSelectedElementIds(prev =>
                         prev.includes(selectableElementId) ? prev.filter(id => id !== selectableElementId) : [...prev, selectableElementId]
                     );
                 }
                 interactionMode.current = 'dragElements';
                 const idsToDrag = new Set<string>();
-                 if (selectableElement.type === 'group') {
+                if (selectableElement.type === 'group') {
                     idsToDrag.add(selectableElement.id);
                     getDescendants(selectableElement.id, elementsRef.current).forEach(desc => idsToDrag.add(desc.id));
                 } else {
                     idsToDrag.add(selectableElement.id);
                 }
 
-                 const initialPositions = new Map<string, {x: number, y: number} | Point[]>();
+                const initialPositions = new Map<string, { x: number, y: number } | Point[]>();
                 elementsRef.current.forEach(el => {
                     if (idsToDrag.has(el.id)) {
-                         if (el.type !== 'path' && el.type !== 'arrow' && el.type !== 'line') {
+                        if (el.type !== 'path' && el.type !== 'arrow' && el.type !== 'line') {
                             initialPositions.set(el.id, { x: el.x, y: el.y });
                         } else {
                             initialPositions.set(el.id, el.points);
@@ -1120,7 +1120,7 @@ const App: React.FC = () => {
             if (handle.includes('l')) { width = originalCropBox.width - dx; x = originalCropBox.x + dx; }
             if (handle.includes('b')) { height = originalCropBox.height + dy; }
             if (handle.includes('t')) { height = originalCropBox.height - dy; y = originalCropBox.y + dy; }
-            
+
             if (x < originalElement.x) {
                 width += x - originalElement.x;
                 x = originalElement.x;
@@ -1150,7 +1150,7 @@ const App: React.FC = () => {
         }
 
 
-        switch(interactionMode.current) {
+        switch (interactionMode.current) {
             case 'pan': {
                 const dx = e.clientX - startPoint.current.x;
                 const dy = e.clientY - startPoint.current.y;
@@ -1174,14 +1174,14 @@ const App: React.FC = () => {
                 break;
             }
             case 'drawShape': {
-                 if (currentDrawingElementId.current) {
+                if (currentDrawingElementId.current) {
                     setElements(prev => prev.map(el => {
                         if (el.id === currentDrawingElementId.current && el.type === 'shape') {
                             let newWidth = Math.abs(point.x - startCanvasPoint.x);
                             let newHeight = Math.abs(point.y - startCanvasPoint.y);
                             let newX = Math.min(point.x, startCanvasPoint.x);
                             let newY = Math.min(point.y, startCanvasPoint.y);
-                            
+
                             if (e.shiftKey) {
                                 if (el.shapeType === 'rectangle' || el.shapeType === 'circle') {
                                     const side = Math.max(newWidth, newHeight);
@@ -1190,12 +1190,12 @@ const App: React.FC = () => {
                                 } else if (el.shapeType === 'triangle') {
                                     newHeight = newWidth * (Math.sqrt(3) / 2);
                                 }
-                                
+
                                 if (point.x < startCanvasPoint.x) newX = startCanvasPoint.x - newWidth;
                                 if (point.y < startCanvasPoint.y) newY = startCanvasPoint.y - newHeight;
                             }
 
-                            return {...el, x: newX, y: newY, width: newWidth, height: newHeight};
+                            return { ...el, x: newX, y: newY, width: newWidth, height: newHeight };
                         }
                         return el;
                     }), false);
@@ -1227,7 +1227,7 @@ const App: React.FC = () => {
             case 'dragElements': {
                 const dx = point.x - startCanvasPoint.x;
                 const dy = point.y - startCanvasPoint.y;
-                
+
                 const movingElementIds = Array.from(dragStartElementPositions.current.keys());
                 const movingElements = elements.filter(el => movingElementIds.includes(el.id));
                 const otherElements = elements.filter(el => !movingElementIds.includes(el.id));
@@ -1249,22 +1249,22 @@ const App: React.FC = () => {
                     getSnapPoints(bounds).v.forEach(p => staticSnapPoints.v.add(p));
                     getSnapPoints(bounds).h.forEach(p => staticSnapPoints.h.add(p));
                 });
-                
+
                 let bestSnapX = { dist: Infinity, val: finalDx, guide: null as Guide | null };
                 let bestSnapY = { dist: Infinity, val: finalDy, guide: null as Guide | null };
-                
+
                 movingElements.forEach(movingEl => {
                     const startPos = dragStartElementPositions.current.get(movingEl.id);
                     if (!startPos) return;
 
                     let movingBounds: Rect;
-                     if (movingEl.type !== 'path' && movingEl.type !== 'arrow' && movingEl.type !== 'line') {
-                        movingBounds = getElementBounds({...movingEl, x: (startPos as Point).x, y: (startPos as Point).y });
+                    if (movingEl.type !== 'path' && movingEl.type !== 'arrow' && movingEl.type !== 'line') {
+                        movingBounds = getElementBounds({ ...movingEl, x: (startPos as Point).x, y: (startPos as Point).y });
                     } else { // path or arrow or line
                         if (movingEl.type === 'arrow' || movingEl.type === 'line') {
-                            movingBounds = getElementBounds({...movingEl, points: startPos as [Point, Point]});
+                            movingBounds = getElementBounds({ ...movingEl, points: startPos as [Point, Point] });
                         } else {
-                            movingBounds = getElementBounds({...movingEl, points: startPos as Point[]});
+                            movingBounds = getElementBounds({ ...movingEl, points: startPos as Point[] });
                         }
                     }
 
@@ -1274,7 +1274,7 @@ const App: React.FC = () => {
                         staticSnapPoints.v.forEach(staticP => {
                             const dist = Math.abs((p + finalDx) - staticP);
                             if (dist < snapThresholdCanvas && dist < bestSnapX.dist) {
-                                bestSnapX = { dist, val: staticP - p, guide: { type: 'v', position: staticP, start: movingBounds.y, end: movingBounds.y + movingBounds.height }};
+                                bestSnapX = { dist, val: staticP - p, guide: { type: 'v', position: staticP, start: movingBounds.y, end: movingBounds.y + movingBounds.height } };
                             }
                         });
                     });
@@ -1282,26 +1282,26 @@ const App: React.FC = () => {
                         staticSnapPoints.h.forEach(staticP => {
                             const dist = Math.abs((p + finalDy) - staticP);
                             if (dist < snapThresholdCanvas && dist < bestSnapY.dist) {
-                                bestSnapY = { dist, val: staticP - p, guide: { type: 'h', position: staticP, start: movingBounds.x, end: movingBounds.x + movingBounds.width }};
+                                bestSnapY = { dist, val: staticP - p, guide: { type: 'h', position: staticP, start: movingBounds.x, end: movingBounds.x + movingBounds.width } };
                             }
                         });
                     });
                 });
-                
+
                 if (bestSnapX.guide) { finalDx = bestSnapX.val; activeGuides.push(bestSnapX.guide); }
                 if (bestSnapY.guide) { finalDy = bestSnapY.val; activeGuides.push(bestSnapY.guide); }
-                
+
                 setAlignmentGuides(activeGuides);
 
                 setElements(prev => prev.map(el => {
                     if (movingElementIds.includes(el.id)) {
                         const startPos = dragStartElementPositions.current.get(el.id);
                         if (!startPos) return el;
-                        
+
                         if (el.type !== 'path' && el.type !== 'arrow' && el.type !== 'line') {
                             return { ...el, x: (startPos as Point).x + finalDx, y: (startPos as Point).y + finalDy };
                         }
-                        
+
                         if (el.type === 'path') {
                             const startPoints = startPos as Point[];
                             const newPoints = startPoints.map(p => ({ x: p.x + finalDx, y: p.y + finalDy }));
@@ -1321,7 +1321,7 @@ const App: React.FC = () => {
                 }), false);
                 break;
             }
-             case 'selectBox': {
+            case 'selectBox': {
                 const newX = Math.min(point.x, startCanvasPoint.x);
                 const newY = Math.min(point.y, startCanvasPoint.y);
                 const newWidth = Math.abs(point.x - startCanvasPoint.x);
@@ -1331,20 +1331,20 @@ const App: React.FC = () => {
             }
         }
     };
-    
+
     const handleMouseUp = () => {
         if (interactionMode.current) {
             if (interactionMode.current === 'selectBox' && selectionBox) {
                 const selectedIds: string[] = [];
                 const { x: sx, y: sy, width: sw, height: sh } = selectionBox;
-                
+
                 elements.forEach(element => {
                     const bounds = getElementBounds(element, elements);
                     const { x: ex, y: ey, width: ew, height: eh } = bounds;
-                    
+
                     if (sx < ex + ew && sx + sw > ex && sy < ey + eh && sy + sh > ey) {
                         const selectable = getSelectableElement(element.id, elements);
-                        if(selectable) selectedIds.push(selectable.id);
+                        if (selectable) selectedIds.push(selectable.id);
                     }
                 });
                 setSelectedElementIds([...new Set(selectedIds)]);
@@ -1357,10 +1357,10 @@ const App: React.FC = () => {
                 setSelectedElementIds(prev => [...new Set([...prev, ...selectedIds])]);
                 setLassoPath(null);
             } else if (['draw', 'drawShape', 'drawArrow', 'drawLine', 'dragElements', 'erase'].some(prefix => interactionMode.current?.startsWith(prefix)) || interactionMode.current.startsWith('resize-')) {
-                 commitAction(els => els); // This effectively commits the current state to history
+                commitAction(els => els); // This effectively commits the current state to history
             }
         }
-        
+
         interactionMode.current = null;
         currentDrawingElementId.current = null;
         setSelectionBox(null);
@@ -1386,10 +1386,10 @@ const App: React.FC = () => {
             const newPanX = mousePoint.x - (mousePoint.x - panOffset.x) * (clampedZoom / oldZoom);
             const newPanY = mousePoint.y - (mousePoint.y - panOffset.y) * (clampedZoom / oldZoom);
 
-            updateActiveBoard(b => ({ ...b, zoom: clampedZoom, panOffset: { x: newPanX, y: newPanY }}));
+            updateActiveBoard(b => ({ ...b, zoom: clampedZoom, panOffset: { x: newPanX, y: newPanY } }));
 
         } else { // Panning (wheelAction === 'pan' and no ctrlKey)
-            updateActiveBoard(b => ({ ...b, panOffset: { x: b.panOffset.x - deltaX, y: b.panOffset.y - deltaY }}));
+            updateActiveBoard(b => ({ ...b, panOffset: { x: b.panOffset.x - deltaX, y: b.panOffset.y - deltaY } }));
         }
     };
 
@@ -1406,10 +1406,10 @@ const App: React.FC = () => {
         commitAction(prev => {
             const elementsToCopy = [elementToCopy, ...getDescendants(elementToCopy.id, prev)];
             const idMap = new Map<string, string>();
-            
-// FIX: Refactored element creation to use explicit switch cases for each element type.
-// This helps TypeScript correctly infer the return type of the map function as Element[],
-// preventing type errors caused by spreading a discriminated union.
+
+            // FIX: Refactored element creation to use explicit switch cases for each element type.
+            // This helps TypeScript correctly infer the return type of the map function as Element[],
+            // preventing type errors caused by spreading a discriminated union.
             const newElements: Element[] = elementsToCopy.map((el): Element => {
                 const newId = generateId();
                 idMap.set(el.id, newId);
@@ -1422,23 +1422,23 @@ const App: React.FC = () => {
                     case 'arrow':
                         return { ...el, id: newId, points: [{ x: el.points[0].x + dx, y: el.points[0].y + dy }, { x: el.points[1].x + dx, y: el.points[1].y + dy }] as [Point, Point] };
                     case 'line':
-                         return { ...el, id: newId, points: [{ x: el.points[0].x + dx, y: el.points[0].y + dy }, { x: el.points[1].x + dx, y: el.points[1].y + dy }] as [Point, Point] };
+                        return { ...el, id: newId, points: [{ x: el.points[0].x + dx, y: el.points[0].y + dy }, { x: el.points[1].x + dx, y: el.points[1].y + dy }] as [Point, Point] };
                     case 'image':
                         return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
                     case 'shape':
-                         return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
+                        return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
                     case 'text':
-                         return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
+                        return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
                     case 'group':
-                         return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
+                        return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
                     case 'video':
                         return { ...el, id: newId, x: el.x + dx, y: el.y + dy };
                 }
             });
-            
-// FIX: Refactored parentId assignment to use an explicit switch statement.
-// This ensures TypeScript can correctly track the types within the Element union
-// and avoids errors when returning the new array of elements.
+
+            // FIX: Refactored parentId assignment to use an explicit switch statement.
+            // This ensures TypeScript can correctly track the types within the Element union
+            // and avoids errors when returning the new array of elements.
             const finalNewElements: Element[] = newElements.map((el): Element => {
                 const parentId = el.parentId ? idMap.get(el.parentId) : undefined;
                 switch (el.type) {
@@ -1452,13 +1452,13 @@ const App: React.FC = () => {
                     case 'video': return { ...el, parentId };
                 }
             });
-            
+
             setSelectedElementIds([idMap.get(elementToCopy.id)!]);
             return [...prev, ...finalNewElements];
         });
     };
-    
-     const handleDownloadImage = (element: ImageElement) => {
+
+    const handleDownloadImage = (element: ImageElement) => {
         const link = document.createElement('a');
         link.href = element.href;
         link.download = `canvas-image-${element.id}.${element.mimeType.split('/')[1] || 'png'}`;
@@ -1484,7 +1484,7 @@ const App: React.FC = () => {
         const elementToCrop = elementsRef.current.find(el => el.id === elementId) as ImageElement;
 
         if (!elementToCrop) { handleCancelCrop(); return; }
-        
+
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => {
@@ -1518,7 +1518,7 @@ const App: React.FC = () => {
         img.onerror = () => { setError("Failed to load image for cropping."); handleCancelCrop(); }
         img.src = elementToCrop.href;
     };
-    
+
     useEffect(() => {
         if (editingElement && editingTextareaRef.current) {
             setTimeout(() => {
@@ -1529,20 +1529,20 @@ const App: React.FC = () => {
             }, 0);
         }
     }, [editingElement]);
-    
+
     useEffect(() => {
         if (editingElement && editingTextareaRef.current) {
             const textarea = editingTextareaRef.current;
             textarea.style.height = 'auto';
             const newHeight = textarea.scrollHeight;
-            textarea.style.height = ''; 
+            textarea.style.height = '';
 
             const currentElement = elementsRef.current.find(el => el.id === editingElement.id);
             if (currentElement && currentElement.type === 'text' && currentElement.height !== newHeight) {
-                setElements(prev => prev.map(el => 
-                    el.id === editingElement.id && el.type === 'text' 
-                    ? { ...el, height: newHeight } 
-                    : el
+                setElements(prev => prev.map(el =>
+                    el.id === editingElement.id && el.type === 'text'
+                        ? { ...el, height: newHeight }
+                        : el
                 ), false);
             }
         }
@@ -1952,7 +1952,7 @@ const App: React.FC = () => {
                             const it = one.items[0];
                             produced += 1;
                             setProgressMessage(`Generating... ${produced}/${imageCount}`);
-                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => {});
+                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
                         } catch (e) {
                             lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                         }
@@ -1972,7 +1972,7 @@ const App: React.FC = () => {
                             }
                             const it = one.items[0];
                             produced += 1;
-                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => {});
+                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
                         } catch (e) {
                             lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                         }
@@ -2161,10 +2161,10 @@ const App: React.FC = () => {
             setIsLoading(false);
         }
     };
-    
+
     const handleInsertHistoryItem = async (item: HistoryItem) => {
         try {
-            setIsHistoryPanelOpen(false);
+            // Panel stays open after insert - removed setIsHistoryPanelOpen(false)
             setIsLoading(true);
             setError(null);
             setProgressMessage(language === 'zho' ? '正在加载历史媒体...' : 'Loading media...');
@@ -2254,13 +2254,13 @@ const App: React.FC = () => {
     const handlePropertyChange = (elementId: string, updates: Partial<Element>) => {
         commitAction(prev => prev.map(el => {
             if (el.id === elementId) {
-                 return { ...el, ...updates };
+                return { ...el, ...updates };
             }
             return el;
         }));
     };
 
-     const handleLayerAction = (elementId: string, action: 'front' | 'back' | 'forward' | 'backward') => {
+    const handleLayerAction = (elementId: string, action: 'front' | 'back' | 'forward' | 'backward') => {
         commitAction(prev => {
             const elementsCopy = [...prev];
             const index = elementsCopy.findIndex(el => el.id === elementId);
@@ -2283,7 +2283,7 @@ const App: React.FC = () => {
         });
         setContextMenu(null);
     };
-    
+
     const handleRasterizeSelection = async () => {
         const elementsToRasterize = elements.filter(
             el => selectedElementIds.includes(el.id) && el.type !== 'image' && el.type !== 'video'
@@ -2302,9 +2302,9 @@ const App: React.FC = () => {
                 minX = Math.min(minX, bounds.x);
                 minY = Math.min(minY, bounds.y);
             });
-            
+
             const { href, mimeType, width, height } = await rasterizeElements(elementsToRasterize);
-            
+
             const newImage: ImageElement = {
                 id: generateId(),
                 type: 'image', name: 'Rasterized Image',
@@ -2338,7 +2338,7 @@ const App: React.FC = () => {
     const handleGroup = () => {
         const selectedElements = elements.filter(el => selectedElementIds.includes(el.id));
         if (selectedElements.length < 2) return;
-        
+
         const bounds = getSelectionBounds(selectedElementIds);
         const newGroupId = generateId();
 
@@ -2353,7 +2353,7 @@ const App: React.FC = () => {
         };
 
         commitAction(prev => {
-            const updatedElements = prev.map(el => 
+            const updatedElements = prev.map(el =>
                 selectedElementIds.includes(el.id) ? { ...el, parentId: newGroupId } : el
             );
             return [...updatedElements, newGroup];
@@ -2419,15 +2419,15 @@ const App: React.FC = () => {
     const handleAlignSelection = (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
         const selectedElements = elementsRef.current.filter(el => selectedElementIds.includes(el.id));
         if (selectedElements.length < 2) return;
-    
+
         const selectionBounds = getSelectionBounds(selectedElementIds);
         const { x: minX, y: minY, width, height } = selectionBounds;
         const maxX = minX + width;
         const maxY = minY + height;
-    
+
         const selectionCenterX = minX + width / 2;
         const selectionCenterY = minY + height / 2;
-    
+
         commitAction(prev => {
             const elementsToUpdate = new Map<string, { dx: number; dy: number }>();
 
@@ -2435,16 +2435,16 @@ const App: React.FC = () => {
                 const bounds = getElementBounds(el, prev);
                 let dx = 0;
                 let dy = 0;
-        
+
                 switch (alignment) {
-                    case 'left':   dx = minX - bounds.x; break;
+                    case 'left': dx = minX - bounds.x; break;
                     case 'center': dx = selectionCenterX - (bounds.x + bounds.width / 2); break;
-                    case 'right':  dx = maxX - (bounds.x + bounds.width); break;
-                    case 'top':    dy = minY - bounds.y; break;
+                    case 'right': dx = maxX - (bounds.x + bounds.width); break;
+                    case 'top': dy = minY - bounds.y; break;
                     case 'middle': dy = selectionCenterY - (bounds.y + bounds.height / 2); break;
                     case 'bottom': dy = maxY - (bounds.y + bounds.height); break;
                 }
-        
+
                 if (dx !== 0 || dy !== 0) {
                     const elementsToMove = [el, ...getDescendants(el.id, prev)];
                     elementsToMove.forEach(elementToMove => {
@@ -2461,7 +2461,7 @@ const App: React.FC = () => {
                 }
 
                 const { dx, dy } = delta;
-                
+
                 switch (el.type) {
                     case 'image':
                     case 'shape':
@@ -2520,7 +2520,7 @@ const App: React.FC = () => {
         setBoards(prev => [...prev, newBoard]);
         setActiveBoardId(newBoard.id);
     };
-    
+
     const handleDeleteBoard = (boardId: string) => {
         if (boards.length <= 1) return; // Can't delete the last board
         setBoards(prev => prev.filter(b => b.id !== boardId));
@@ -2528,7 +2528,7 @@ const App: React.FC = () => {
             setActiveBoardId(boards.find(b => b.id !== boardId)!.id);
         }
     };
-    
+
     const handleRenameBoard = (boardId: string, name: string) => {
         setBoards(prev => prev.map(b => b.id === boardId ? { ...b, name } : b));
     };
@@ -2538,14 +2538,14 @@ const App: React.FC = () => {
     };
 
     const generateBoardThumbnail = useCallback((elements: Element[], bgColor: string): string => {
-         const THUMB_WIDTH = 120;
-         const THUMB_HEIGHT = 80;
+        const THUMB_WIDTH = 120;
+        const THUMB_HEIGHT = 80;
 
         if (elements.length === 0) {
             const emptySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMB_WIDTH}" height="${THUMB_HEIGHT}"><rect width="100%" height="100%" fill="${bgColor}" /></svg>`;
             return `data:image/svg+xml;base64,${btoa(emptySvg)}`;
         }
-        
+
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         elements.forEach(el => {
             const bounds = getElementBounds(el, elements);
@@ -2568,15 +2568,15 @@ const App: React.FC = () => {
         const dy = (THUMB_HEIGHT - contentHeight * scale) / 2 - minY * scale;
 
         const svgContent = elements.map(el => {
-             if (el.type === 'path') {
+            if (el.type === 'path') {
                 const pathData = el.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
                 return `<path d="${pathData}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${el.strokeOpacity || 1}" />`;
-             }
-             if (el.type === 'image') {
-                 return `<image href="${el.href}" x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" />`;
-             }
-             // Add other element types for more accurate thumbnails if needed
-             return '';
+            }
+            if (el.type === 'image') {
+                return `<image href="${el.href}" x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" />`;
+            }
+            // Add other element types for more accurate thumbnails if needed
+            return '';
         }).join('');
 
         const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMB_WIDTH}" height="${THUMB_HEIGHT}"><rect width="100%" height="100%" fill="${bgColor}" /><g transform="translate(${dx} ${dy}) scale(${scale})">${svgContent}</g></svg>`;
@@ -2633,10 +2633,10 @@ const App: React.FC = () => {
                 onDeleteBoard={handleDeleteBoard}
                 generateBoardThumbnail={(els) => generateBoardThumbnail(els, activeBoard.canvasBackgroundColor)}
             />
-            <CanvasSettings 
-                isOpen={isSettingsPanelOpen} 
-                onClose={() => setIsSettingsPanelOpen(false)} 
-                canvasBackgroundColor={canvasBackgroundColor} 
+            <CanvasSettings
+                isOpen={isSettingsPanelOpen}
+                onClose={() => setIsSettingsPanelOpen(false)}
+                canvasBackgroundColor={canvasBackgroundColor}
                 onCanvasBackgroundColorChange={handleCanvasBackgroundColorChange}
                 language={language}
                 setLanguage={setLanguage}
@@ -2674,7 +2674,7 @@ const App: React.FC = () => {
                 canUndo={historyIndex > 0}
                 canRedo={historyIndex < history.length - 1}
             />
-             <LayerPanel
+            <LayerPanel
                 isOpen={isLayerPanelOpen}
                 onClose={() => setIsLayerPanelOpen(false)}
                 elements={elements}
@@ -2695,10 +2695,10 @@ const App: React.FC = () => {
                             newElements.push(draggedItem); // Fallback
                             return newElements;
                         }
-                        
+
                         const finalIndex = position === 'before' ? targetIndex : targetIndex + 1;
                         newElements.splice(finalIndex, 0, draggedItem);
-                        
+
                         return newElements;
                     });
                 }}
@@ -2717,9 +2717,9 @@ const App: React.FC = () => {
                 >
                     <defs>
                         <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                            <circle cx="1" cy="1" r="1" className="fill-gray-400 opacity-50"/>
+                            <circle cx="1" cy="1" r="1" className="fill-gray-400 opacity-50" />
                         </pattern>
-                         {elements.map(el => {
+                        {elements.map(el => {
                             if (el.type === 'image' && el.borderRadius && el.borderRadius > 0) {
                                 const clipPathId = `clip-${el.id}`;
                                 return (
@@ -2737,8 +2737,8 @@ const App: React.FC = () => {
                         })}
                     </defs>
                     <g transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoom})`}>
-                        <rect x={-panOffset.x/zoom} y={-panOffset.y/zoom} width={`calc(100% / ${zoom})`} height={`calc(100% / ${zoom})`} fill="url(#grid)" />
-                        
+                        <rect x={-panOffset.x / zoom} y={-panOffset.y / zoom} width={`calc(100% / ${zoom})`} height={`calc(100% / ${zoom})`} fill="url(#grid)" />
+
                         {elements.map(el => {
                             if (!isElementVisible(el, elements)) return null;
 
@@ -2747,8 +2747,8 @@ const App: React.FC = () => {
 
                             if (isSelected && !croppingState) {
                                 if (selectedElementIds.length > 1 || el.type === 'path' || el.type === 'arrow' || el.type === 'line' || el.type === 'group') {
-                                     const bounds = getElementBounds(el, elements);
-                                     selectionComponent = <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2/zoom} strokeDasharray={`${6/zoom} ${4/zoom}`} pointerEvents="none" />
+                                    const bounds = getElementBounds(el, elements);
+                                    selectionComponent = <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} pointerEvents="none" />
                                 } else if ((el.type === 'image' || el.type === 'shape' || el.type === 'text' || el.type === 'video')) {
                                     const handleSize = 8 / zoom;
                                     const handles = [
@@ -2756,13 +2756,13 @@ const App: React.FC = () => {
                                         { name: 'ml', x: el.x, y: el.y + el.height / 2, cursor: 'ew-resize' }, { name: 'mr', x: el.x + el.width, y: el.y + el.height / 2, cursor: 'ew-resize' },
                                         { name: 'bl', x: el.x, y: el.y + el.height, cursor: 'nesw-resize' }, { name: 'bm', x: el.x + el.width / 2, y: el.y + el.height, cursor: 'ns-resize' }, { name: 'br', x: el.x + el.width, y: el.y + el.height, cursor: 'nwse-resize' },
                                     ];
-                                     selectionComponent = <g>
+                                    selectionComponent = <g>
                                         <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / zoom} pointerEvents="none" />
                                         {handles.map(h => <rect key={h.name} data-handle={h.name} x={h.x - handleSize / 2} y={h.y - handleSize / 2} width={handleSize} height={handleSize} fill="white" stroke="#3b82f6" strokeWidth={1 / zoom} style={{ cursor: h.cursor }} />)}
                                     </g>;
                                 }
                             }
-                           
+
                             if (el.type === 'path') {
                                 const pathData = el.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
                                 return <g key={el.id} data-id={el.id} className="cursor-pointer"><path d={pathData} stroke={el.strokeColor} strokeWidth={el.strokeWidth / zoom} fill="none" strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke" strokeOpacity={el.strokeOpacity} />{selectionComponent}</g>;
@@ -2812,16 +2812,16 @@ const App: React.FC = () => {
                                     </g>
                                 )
                             }
-                             if (el.type === 'shape') {
+                            if (el.type === 'shape') {
                                 let shapeJsx;
                                 if (el.shapeType === 'rectangle') shapeJsx = <rect width={el.width} height={el.height} rx={el.borderRadius || 0} ry={el.borderRadius || 0} />
-                                else if (el.shapeType === 'circle') shapeJsx = <ellipse cx={el.width/2} cy={el.height/2} rx={el.width/2} ry={el.height/2} />
-                                else if (el.shapeType === 'triangle') shapeJsx = <polygon points={`${el.width/2},0 0,${el.height} ${el.width},${el.height}`} />
+                                else if (el.shapeType === 'circle') shapeJsx = <ellipse cx={el.width / 2} cy={el.height / 2} rx={el.width / 2} ry={el.height / 2} />
+                                else if (el.shapeType === 'triangle') shapeJsx = <polygon points={`${el.width / 2},0 0,${el.height} ${el.width},${el.height}`} />
                                 return (
-                                     <g key={el.id} data-id={el.id} transform={`translate(${el.x}, ${el.y})`} className="cursor-pointer">
-                                        {shapeJsx && React.cloneElement(shapeJsx, { 
-                                            fill: el.fillColor, 
-                                            stroke: el.strokeColor, 
+                                    <g key={el.id} data-id={el.id} transform={`translate(${el.x}, ${el.y})`} className="cursor-pointer">
+                                        {shapeJsx && React.cloneElement(shapeJsx, {
+                                            fill: el.fillColor,
+                                            stroke: el.strokeColor,
                                             strokeWidth: el.strokeWidth / zoom,
                                             strokeDasharray: el.strokeDashArray ? el.strokeDashArray.join(' ') : 'none'
                                         })}
@@ -2834,25 +2834,25 @@ const App: React.FC = () => {
                                 const clipPathId = `clip-${el.id}`;
                                 return (
                                     <g key={el.id} data-id={el.id}>
-                                        <image 
-                                            transform={`translate(${el.x}, ${el.y})`} 
-                                            href={el.href} 
-                                            width={el.width} 
-                                            height={el.height} 
-                                            className={croppingState && croppingState.elementId !== el.id ? 'opacity-30' : ''} 
+                                        <image
+                                            transform={`translate(${el.x}, ${el.y})`}
+                                            href={el.href}
+                                            width={el.width}
+                                            height={el.height}
+                                            className={croppingState && croppingState.elementId !== el.id ? 'opacity-30' : ''}
                                             clipPath={hasBorderRadius ? `url(#${clipPathId})` : undefined}
                                         />
                                         {selectionComponent}
                                     </g>
                                 );
                             }
-                             if (el.type === 'video') {
+                            if (el.type === 'video') {
                                 return (
                                     <g key={el.id} data-id={el.id}>
                                         <foreignObject x={el.x} y={el.y} width={el.width} height={el.height}>
-                                            <video 
-                                                src={el.href} 
-                                                controls 
+                                            <video
+                                                src={el.href}
+                                                controls
                                                 style={{ width: '100%', height: '100%', borderRadius: '8px' }}
                                                 className={croppingState ? 'opacity-30' : ''}
                                             ></video>
@@ -2861,18 +2861,18 @@ const App: React.FC = () => {
                                     </g>
                                 );
                             }
-                             if (el.type === 'group') {
+                            if (el.type === 'group') {
                                 return <g key={el.id} data-id={el.id}>{selectionComponent}</g>
-                             }
+                            }
                             return null;
                         })}
 
                         {lassoPath && (
-                            <path d={lassoPath.map((p, i) => i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`).join(' ')} stroke="rgb(59 130 246)" strokeWidth={1 / zoom} strokeDasharray={`${4/zoom} ${4/zoom}`} fill="rgba(59, 130, 246, 0.1)" />
+                            <path d={lassoPath.map((p, i) => i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`).join(' ')} stroke="rgb(59 130 246)" strokeWidth={1 / zoom} strokeDasharray={`${4 / zoom} ${4 / zoom}`} fill="rgba(59, 130, 246, 0.1)" />
                         )}
-                        
+
                         {alignmentGuides.map((guide, i) => (
-                             <line key={i} x1={guide.type === 'v' ? guide.position : guide.start} y1={guide.type === 'h' ? guide.position : guide.start} x2={guide.type === 'v' ? guide.position : guide.end} y2={guide.type === 'h' ? guide.position : guide.end} stroke="red" strokeWidth={1/zoom} strokeDasharray={`${4/zoom} ${2/zoom}`} />
+                            <line key={i} x1={guide.type === 'v' ? guide.position : guide.start} y1={guide.type === 'h' ? guide.position : guide.start} x2={guide.type === 'v' ? guide.position : guide.end} y2={guide.type === 'h' ? guide.position : guide.end} stroke="red" strokeWidth={1 / zoom} strokeDasharray={`${4 / zoom} ${2 / zoom}`} />
                         ))}
 
                         {selectedElementIds.length > 0 && !croppingState && !editingElement && (() => {
@@ -2880,10 +2880,10 @@ const App: React.FC = () => {
                                 const bounds = getSelectionBounds(selectedElementIds);
                                 const toolbarScreenWidth = 280;
                                 const toolbarScreenHeight = 56;
-                                
+
                                 const toolbarCanvasWidth = toolbarScreenWidth / zoom;
                                 const toolbarCanvasHeight = toolbarScreenHeight / zoom;
-                                
+
                                 const x = bounds.x + bounds.width / 2 - (toolbarCanvasWidth / 2);
                                 const y = bounds.y - toolbarCanvasHeight - (10 / zoom);
 
@@ -2921,13 +2921,13 @@ const App: React.FC = () => {
                                 if (element.type === 'group') toolbarScreenWidth = 80;
 
                                 const toolbarScreenHeight = 56;
-                                
+
                                 const toolbarCanvasWidth = toolbarScreenWidth / zoom;
                                 const toolbarCanvasHeight = toolbarScreenHeight / zoom;
-                                
+
                                 const x = bounds.x + bounds.width / 2 - (toolbarCanvasWidth / 2);
                                 const y = bounds.y - toolbarCanvasHeight - (10 / zoom);
-                                
+
                                 const toolbar = <div
                                     style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top left', width: `${toolbarScreenWidth}px`, height: `${toolbarScreenHeight}px` }}
                                     onMouseDown={(e) => e.stopPropagation()}
@@ -2941,14 +2941,14 @@ const App: React.FC = () => {
                                             <>
                                                 <div className="h-6 w-px bg-gray-200"></div>
                                                 <div title={t('contextMenu.borderRadius')} className="flex items-center space-x-1 p-1">
-                                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600"><path d="M10 3H5a2 2 0 0 0-2 2v5"/></svg>
-                                                    <input 
-                                                        type="range" 
-                                                        min="0" 
-                                                        max={Math.min(element.width, element.height) / 2} 
-                                                        value={element.borderRadius || 0} 
-                                                        onChange={e => handlePropertyChange(element.id, { borderRadius: parseInt(e.target.value, 10) })} 
-                                                        className="w-16" 
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600"><path d="M10 3H5a2 2 0 0 0-2 2v5" /></svg>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max={Math.min(element.width, element.height) / 2}
+                                                        value={element.borderRadius || 0}
+                                                        onChange={e => handlePropertyChange(element.id, { borderRadius: parseInt(e.target.value, 10) })}
+                                                        className="w-16"
                                                     />
                                                     <input
                                                         type="number"
@@ -2980,18 +2980,18 @@ const App: React.FC = () => {
                                                 </div>
                                             </>
                                         )}
-                                         {element.type === 'shape' && element.shapeType === 'rectangle' && (
+                                        {element.type === 'shape' && element.shapeType === 'rectangle' && (
                                             <>
                                                 <div className="h-6 w-px bg-gray-200"></div>
                                                 <div title={t('contextMenu.borderRadius')} className="flex items-center space-x-1 p-1">
-                                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600"><path d="M10 3H5a2 2 0 0 0-2 2v5"/></svg>
-                                                    <input 
-                                                        type="range" 
-                                                        min="0" 
-                                                        max={Math.min(element.width, element.height) / 2} 
-                                                        value={element.borderRadius || 0} 
-                                                        onChange={e => handlePropertyChange(element.id, { borderRadius: parseInt(e.target.value, 10) })} 
-                                                        className="w-16" 
+                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600"><path d="M10 3H5a2 2 0 0 0-2 2v5" /></svg>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max={Math.min(element.width, element.height) / 2}
+                                                        value={element.borderRadius || 0}
+                                                        onChange={e => handlePropertyChange(element.id, { borderRadius: parseInt(e.target.value, 10) })}
+                                                        className="w-16"
                                                     />
                                                     <input
                                                         type="number"
@@ -3012,7 +3012,7 @@ const App: React.FC = () => {
                                         <button title={t('contextMenu.delete')} onClick={() => handleDeleteElement(element.id)} className="p-2 rounded hover:bg-red-100 hover:text-red-600 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                                     </div>
                                 </div>;
-                                
+
                                 return (
                                     <foreignObject x={x} y={y} width={toolbarCanvasWidth} height={toolbarCanvasHeight} style={{ overflow: 'visible' }}>
                                         {toolbar}
@@ -3022,13 +3022,13 @@ const App: React.FC = () => {
                             return null;
                         })()}
                         {editingElement && (() => {
-                             const element = elements.find(el => el.id === editingElement.id) as TextElement;
-                             if (!element) return null;
-                             return <foreignObject 
+                            const element = elements.find(el => el.id === editingElement.id) as TextElement;
+                            if (!element) return null;
+                            return <foreignObject
                                 x={element.x} y={element.y} width={element.width} height={element.height}
                                 onMouseDown={(e) => e.stopPropagation()}
-                             >
-                                 <textarea
+                            >
+                                <textarea
                                     ref={editingTextareaRef}
                                     value={editingElement.text}
                                     onChange={(e) => setEditingElement({ ...editingElement, text: e.target.value })}
@@ -3039,13 +3039,13 @@ const App: React.FC = () => {
                                         fontSize: element.fontSize, color: element.fontColor,
                                         overflow: 'hidden'
                                     }}
-                                 />
-                             </foreignObject>
+                                />
+                            </foreignObject>
                         })()}
                         {croppingState && (
-                             <g>
+                            <g>
                                 <path
-                                    d={`M ${-panOffset.x/zoom},${-panOffset.y/zoom} H ${window.innerWidth/zoom - panOffset.x/zoom} V ${window.innerHeight/zoom - panOffset.y/zoom} H ${-panOffset.x/zoom} Z M ${croppingState.cropBox.x},${croppingState.cropBox.y} v ${croppingState.cropBox.height} h ${croppingState.cropBox.width} v ${-croppingState.cropBox.height} Z`}
+                                    d={`M ${-panOffset.x / zoom},${-panOffset.y / zoom} H ${window.innerWidth / zoom - panOffset.x / zoom} V ${window.innerHeight / zoom - panOffset.y / zoom} H ${-panOffset.x / zoom} Z M ${croppingState.cropBox.x},${croppingState.cropBox.y} v ${croppingState.cropBox.height} h ${croppingState.cropBox.width} v ${-croppingState.cropBox.height} Z`}
                                     fill="rgba(0,0,0,0.5)"
                                     fillRule="evenodd"
                                     pointerEvents="none"
@@ -3058,12 +3058,12 @@ const App: React.FC = () => {
                                         { name: 'tl', x, y, cursor: 'nwse-resize' }, { name: 'tr', x: x + width, y, cursor: 'nesw-resize' },
                                         { name: 'bl', x, y: y + height, cursor: 'nesw-resize' }, { name: 'br', x: x + width, y: y + height, cursor: 'nwse-resize' },
                                     ];
-                                    return handles.map(h => <rect key={h.name} data-handle={h.name} x={h.x - handleSize/2} y={h.y - handleSize/2} width={handleSize} height={handleSize} fill="white" stroke="#3b82f6" strokeWidth={1/zoom} style={{ cursor: h.cursor }}/>)
+                                    return handles.map(h => <rect key={h.name} data-handle={h.name} x={h.x - handleSize / 2} y={h.y - handleSize / 2} width={handleSize} height={handleSize} fill="white" stroke="#3b82f6" strokeWidth={1 / zoom} style={{ cursor: h.cursor }} />)
                                 })()}
                             </g>
                         )}
                         {selectionBox && (
-                             <rect
+                            <rect
                                 x={selectionBox.x}
                                 y={selectionBox.y}
                                 width={selectionBox.width}
@@ -3075,17 +3075,17 @@ const App: React.FC = () => {
                         )}
                     </g>
                 </svg>
-                 {contextMenu && (() => {
+                {contextMenu && (() => {
                     const hasDrawableSelection = elements.some(el => selectedElementIds.includes(el.id) && el.type !== 'image' && el.type !== 'video');
                     const isGroupable = selectedElementIds.length > 1;
                     const isUngroupable = selectedElementIds.length === 1 && elements.find(el => el.id === selectedElementIds[0])?.type === 'group';
 
                     return (
                         <div style={{ top: contextMenu.y, left: contextMenu.x }} className="absolute z-30 bg-white rounded-md shadow-lg border border-gray-200 text-sm py-1 text-gray-800" onContextMenu={e => e.stopPropagation()}>
-                           {isGroupable && <button onClick={handleGroup} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.group')}</button>}
-                           {isUngroupable && <button onClick={handleUngroup} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.ungroup')}</button>}
-                           {(isGroupable || isUngroupable) && <div className="border-t border-gray-100 my-1"></div>}
-                            
+                            {isGroupable && <button onClick={handleGroup} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.group')}</button>}
+                            {isUngroupable && <button onClick={handleUngroup} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.ungroup')}</button>}
+                            {(isGroupable || isUngroupable) && <div className="border-t border-gray-100 my-1"></div>}
+
                             {contextMenu.elementId && (<>
                                 <button onClick={() => handleLayerAction(contextMenu.elementId!, 'forward')} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.bringForward')}</button>
                                 <button onClick={() => handleLayerAction(contextMenu.elementId!, 'backward')} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.sendBackward')}</button>
@@ -3093,7 +3093,7 @@ const App: React.FC = () => {
                                 <button onClick={() => handleLayerAction(contextMenu.elementId!, 'front')} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.bringToFront')}</button>
                                 <button onClick={() => handleLayerAction(contextMenu.elementId!, 'back')} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100">{t('contextMenu.sendToBack')}</button>
                             </>)}
-                            
+
                             {hasDrawableSelection && (
                                 <>
                                     <div className="border-t border-gray-100 my-1"></div>
@@ -3104,13 +3104,13 @@ const App: React.FC = () => {
                     );
                 })()}
             </div>
-            {!croppingState && <PromptBar 
+            {!croppingState && <PromptBar
                 t={t}
-                prompt={prompt} 
-                setPrompt={setPrompt} 
-                onGenerate={handleGenerate} 
-                isLoading={isLoading} 
-                isSelectionActive={isSelectionActive} 
+                prompt={prompt}
+                setPrompt={setPrompt}
+                onGenerate={handleGenerate}
+                isLoading={isLoading}
+                isSelectionActive={isSelectionActive}
                 selectedElementCount={selectedElementIds.length}
                 onAddUserEffect={handleAddUserEffect}
                 userEffects={userEffects}
