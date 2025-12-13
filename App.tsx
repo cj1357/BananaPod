@@ -13,7 +13,7 @@ import { LayerPanel } from './components/LayerPanel';
 import { BoardPanel } from './components/BoardPanel';
 import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, TextElement, ArrowElement, UserEffect, LineElement, WheelAction, GroupElement, Board, VideoElement, ImageAspectRatio, ImageSize } from './types';
 import { editImage, generateImageFromText, generateVideo } from './services/geminiService';
-import { fileToDataUrl, blobToDataUrl } from './utils/fileUtils';
+import { fileToDataUrl, blobToDataUrl, loadImageWithTimeout } from './utils/fileUtils';
 import { translations } from './translations';
 import { loadBoards, loadSettings, debouncedSaveBoards, debouncedSaveSettings, clearAllData, requestPersistentStorage, getStorageInfo, type AppSettings } from './services/storageService';
 
@@ -1559,16 +1559,17 @@ const App: React.FC = () => {
                     
                     if (result.newImageBase64 && result.newImageMimeType) {
                         const { newImageBase64, newImageMimeType } = result;
+                        const imageSrc = `data:${newImageMimeType};base64,${newImageBase64}`;
 
-                        const img = new Image();
-                        img.onload = () => {
+                        try {
+                            const img = await loadImageWithTimeout(imageSrc);
                             const maskPathIds = new Set(maskPaths.map(p => p.id));
                             commitAction(prev => 
                                 prev.map(el => {
                                     if (el.id === baseImage.id && el.type === 'image') {
                                         return {
                                             ...el,
-                                            href: `data:${newImageMimeType};base64,${newImageBase64}`,
+                                            href: imageSrc,
                                             width: img.width,
                                             height: img.height,
                                         };
@@ -1578,10 +1579,10 @@ const App: React.FC = () => {
                             );
                             setSelectedElementIds([baseImage.id]);
                             setIsLoading(false);
-                        };
-                        img.onerror = () => { setError('Failed to load the generated image.'); setIsLoading(false); };
-                        img.src = `data:${newImageMimeType};base64,${newImageBase64}`;
-
+                        } catch (imgError) {
+                            setError('Failed to load the generated image.');
+                            setIsLoading(false);
+                        }
                     } else {
                         setError(result.textResponse || 'Inpainting failed to produce an image.');
                         setIsLoading(false);
@@ -1604,9 +1605,10 @@ const App: React.FC = () => {
 
                 if (result.newImageBase64 && result.newImageMimeType) {
                     const { newImageBase64, newImageMimeType } = result;
+                    const imageSrc = `data:${newImageMimeType};base64,${newImageBase64}`;
                     
-                    const img = new Image();
-                    img.onload = () => {
+                    try {
+                        const img = await loadImageWithTimeout(imageSrc);
                         let minX = Infinity, minY = Infinity, maxX = -Infinity;
                         selectedElements.forEach(el => {
                             const bounds = getElementBounds(el);
@@ -1620,14 +1622,15 @@ const App: React.FC = () => {
                         const newImage: ImageElement = {
                             id: generateId(), type: 'image', x, y, name: 'Generated Image',
                             width: img.width, height: img.height,
-                            href: `data:${newImageMimeType};base64,${newImageBase64}`, mimeType: newImageMimeType,
+                            href: imageSrc, mimeType: newImageMimeType,
                         };
                         commitAction(prev => [...prev, newImage]);
                         setSelectedElementIds([newImage.id]);
                         setIsLoading(false);
-                    };
-                    img.onerror = () => { setError('Failed to load the generated image.'); setIsLoading(false); };
-                    img.src = `data:${newImageMimeType};base64,${newImageBase64}`;
+                    } catch (imgError) {
+                        setError('Failed to load the generated image.');
+                        setIsLoading(false);
+                    }
                 } else {
                     setError(result.textResponse || 'Generation failed to produce an image.');
                     setIsLoading(false);
@@ -1643,9 +1646,10 @@ const App: React.FC = () => {
 
                 if (result.newImageBase64 && result.newImageMimeType) {
                     const { newImageBase64, newImageMimeType } = result;
+                    const imageSrc = `data:${newImageMimeType};base64,${newImageBase64}`;
                     
-                    const img = new Image();
-                    img.onload = () => {
+                    try {
+                        const img = await loadImageWithTimeout(imageSrc);
                         if (!svgRef.current) {
                             setIsLoading(false);
                             return;
@@ -1659,14 +1663,15 @@ const App: React.FC = () => {
                         const newImage: ImageElement = {
                             id: generateId(), type: 'image', x, y, name: 'Generated Image',
                             width: img.width, height: img.height,
-                            href: `data:${newImageMimeType};base64,${newImageBase64}`, mimeType: newImageMimeType,
+                            href: imageSrc, mimeType: newImageMimeType,
                         };
                         commitAction(prev => [...prev, newImage]);
                         setSelectedElementIds([newImage.id]);
                         setIsLoading(false);
-                    };
-                    img.onerror = () => { setError('Failed to load the generated image.'); setIsLoading(false); };
-                    img.src = `data:${newImageMimeType};base64,${newImageBase64}`;
+                    } catch (imgError) {
+                        setError('Failed to load the generated image.');
+                        setIsLoading(false);
+                    }
                 } else { 
                     setError(result.textResponse || 'Generation failed to produce an image.');
                     setIsLoading(false);

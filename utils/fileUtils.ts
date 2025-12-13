@@ -28,3 +28,35 @@ export const blobToDataUrl = (blob: Blob): Promise<string> => {
         reader.readAsDataURL(blob);
     });
 };
+
+// Load image with timeout (default 30 seconds)
+export const loadImageWithTimeout = (src: string, timeout: number = 30000): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+        const cleanup = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+        };
+
+        timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error(`Image loading timed out after ${timeout / 1000} seconds`));
+        }, timeout);
+
+        img.onload = () => {
+            cleanup();
+            resolve(img);
+        };
+
+        img.onerror = () => {
+            cleanup();
+            reject(new Error('Failed to load image'));
+        };
+
+        img.src = src;
+    });
+};
