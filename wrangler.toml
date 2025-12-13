@@ -13,7 +13,7 @@ kv_namespaces = [
 
 # R2: generated media storage
 r2_buckets = [
-  { binding = "MEDIA_BUCKET", bucket_name = "bananapod-data" }
+  { binding = "MEDIA_BUCKET", bucket_name = "bananapod-data-apac" }
 ]
 
 # D1: history metadata
