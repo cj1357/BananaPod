@@ -421,7 +421,7 @@ const App: React.FC = () => {
     const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
     const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio | 'auto'>('auto');
     const [imageSize, setImageSize] = useState<ImageSize>('1K');
-    const [imageCount, setImageCount] = useState<number>(1);
+    const [imageCount, setImageCount] = useState<number>(2);
     const [progressMessage, setProgressMessage] = useState<string>('');
     
     // API Configuration
@@ -1596,8 +1596,18 @@ const App: React.FC = () => {
 
         // IMAGE GENERATION LOGIC
         try {
-            const DEFAULT_PLACEHOLDER_SIZE = 512;
-            const MAX_DIM = 800;
+            const PLACEHOLDER_LONG_SIDE = 1024;
+            const MAX_DIM = 1024;
+
+            const getPlaceholderSize = (): { w: number; h: number } => {
+                const ratioStr = imageAspectRatio === 'auto' ? '1:1' : imageAspectRatio;
+                const [a, b] = ratioStr.split(':').map(n => Number(n));
+                const ratio = (Number.isFinite(a) && Number.isFinite(b) && b !== 0) ? (a / b) : 1;
+                if (ratio >= 1) {
+                    return { w: PLACEHOLDER_LONG_SIDE, h: Math.round(PLACEHOLDER_LONG_SIDE / ratio) };
+                }
+                return { w: Math.round(PLACEHOLDER_LONG_SIDE * ratio), h: PLACEHOLDER_LONG_SIDE };
+            };
 
             const scheduleImageSizeUpdateById = (elementId: string, href: string) => {
                 (async () => {
@@ -1685,14 +1695,15 @@ const App: React.FC = () => {
 
                             const id = generateId();
                             createdIds.push(id);
+                            const { w, h } = getPlaceholderSize();
                             const newImage: ImageElement = {
                                 id, type: 'image', name: 'Generated Image',
                                 x: cursorX, y: baseImage.y,
-                                width: DEFAULT_PLACEHOLDER_SIZE, height: DEFAULT_PLACEHOLDER_SIZE,
+                                width: w, height: h,
                                 href: mediaUrl, mimeType,
                             };
                             commitAction(prev => [...prev, newImage]);
-                            cursorX += DEFAULT_PLACEHOLDER_SIZE + 20;
+                            cursorX += w + 20;
                             scheduleImageSizeUpdateById(id, mediaUrl);
                         };
 
@@ -1766,18 +1777,19 @@ const App: React.FC = () => {
                         for (const it of extraItems) {
                             const id = generateId();
                             createdIds.push(id);
+                            const { w, h } = getPlaceholderSize();
                             updated = [...updated, {
                                 id,
                                 type: 'image',
                                 name: 'Generated Image',
                                 x: cursorX,
                                 y,
-                                width: DEFAULT_PLACEHOLDER_SIZE,
-                                height: DEFAULT_PLACEHOLDER_SIZE,
+                                width: w,
+                                height: h,
                                 href: it.mediaUrl,
                                 mimeType: it.mimeType,
                             } as ImageElement];
-                            cursorX += DEFAULT_PLACEHOLDER_SIZE + 20;
+                            cursorX += w + 20;
                         }
                         return updated;
                     });
@@ -1876,15 +1888,16 @@ const App: React.FC = () => {
 
                 // Insert immediately with placeholder size; update true size in background when loaded.
                 for (const it of result.items) {
+                    const { w, h } = getPlaceholderSize();
                     const id = generateId();
                     newIds.push(id);
                     const newImage: ImageElement = {
                         id, type: 'image', x: cursorX, y, name: 'Generated Image',
-                        width: DEFAULT_PLACEHOLDER_SIZE, height: DEFAULT_PLACEHOLDER_SIZE,
+                        width: w, height: h,
                         href: it.mediaUrl, mimeType: it.mimeType,
                     };
                     commitAction(prev => [...prev, newImage]);
-                    cursorX += DEFAULT_PLACEHOLDER_SIZE + 20;
+                    cursorX += w + 20;
                     scheduleImageSizeUpdateById(id, it.mediaUrl);
                 }
 
@@ -1916,8 +1929,7 @@ const App: React.FC = () => {
                     const id = generateId();
                     newIds.push(id);
 
-                    const w = DEFAULT_PLACEHOLDER_SIZE;
-                    const h = DEFAULT_PLACEHOLDER_SIZE;
+                    const { w, h } = getPlaceholderSize();
                     const x = isFirst ? (canvasPoint.x - w / 2) : cursorX;
                     const y = isFirst ? (canvasPoint.y - h / 2) : baseY;
 
@@ -1985,11 +1997,10 @@ const App: React.FC = () => {
             let isFirst = true;
 
             for (const it of result.items) {
+                const { w, h } = getPlaceholderSize();
                 const id = generateId();
                 newIds.push(id);
 
-                const w = DEFAULT_PLACEHOLDER_SIZE;
-                const h = DEFAULT_PLACEHOLDER_SIZE;
                 const x = isFirst ? (canvasPoint.x - w / 2) : cursorX;
                 const y = isFirst ? (canvasPoint.y - h / 2) : baseY;
 
