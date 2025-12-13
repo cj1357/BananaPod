@@ -64,11 +64,12 @@ export const HistoryPanel: React.FC<Props> = ({ isOpen, onClose, onInsert, onLog
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // New states for filtering and preview
+  // States for filtering and preview
   const [searchQuery, setSearchQuery] = React.useState("");
   const [timeFilter, setTimeFilter] = React.useState<TimeFilter>('all');
   const [previewItem, setPreviewItem] = React.useState<HistoryItem | null>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [previewZoom, setPreviewZoom] = React.useState(1);
 
   // Ref for infinite scroll
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -89,7 +90,7 @@ export const HistoryPanel: React.FC<Props> = ({ isOpen, onClose, onInsert, onLog
   }, []);
 
   const loadMore = React.useCallback(async () => {
-    if (!cursor) return;
+    if (!cursor || isLoading) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -101,7 +102,7 @@ export const HistoryPanel: React.FC<Props> = ({ isOpen, onClose, onInsert, onLog
     } finally {
       setIsLoading(false);
     }
-  }, [cursor]);
+  }, [cursor, isLoading]);
 
   React.useEffect(() => {
     if (isOpen) loadFirstPage();
@@ -133,6 +134,7 @@ export const HistoryPanel: React.FC<Props> = ({ isOpen, onClose, onInsert, onLog
       if (e.key === "Escape") {
         if (previewItem) {
           setPreviewItem(null);
+          setPreviewZoom(1);
         } else {
           onClose();
         }
@@ -221,81 +223,77 @@ export const HistoryPanel: React.FC<Props> = ({ isOpen, onClose, onInsert, onLog
         aria-modal="true"
         aria-label="History"
       >
-        {/* Header */}
-        <div className="flex-shrink-0 sticky top-0 z-10 flex flex-col gap-3 p-4 border-b border-white/10">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <h3 className="text-lg font-semibold">History</h3>
-              <span className="text-xs text-white/50">{filteredItems.length ? `${filteredItems.length}` : ""}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={loadFirstPage}
-                className="text-gray-300 hover:text-white p-2 rounded-full hover:bg-white/10"
-                title={t("toolbar.redo")}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M21 12a9 9 0 1 1-3-6.7" />
-                  <polyline points="21 3 21 9 15 9" />
-                </svg>
-              </button>
-              <button
-                onClick={handleLogout}
-                className="text-gray-300 hover:text-white p-2 rounded-full hover:bg-white/10"
-                title="切换密钥"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M10 17l1 1 7-7-7-7-1 1" />
-                  <path d="M14 11H3" />
-                  <path d="M21 12a9 9 0 0 0-9-9" />
-                  <path d="M12 21a9 9 0 0 0 9-9" />
-                </svg>
-              </button>
-              <button
-                onClick={onClose}
-                className="text-gray-300 hover:text-white p-2 rounded-full hover:bg-white/10"
-                title="关闭（Esc）"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-            </div>
+        {/* Header - Single Row */}
+        <div className="flex-shrink-0 sticky top-0 z-10 flex items-center gap-3 px-4 py-2 border-b border-white/10">
+          {/* Title */}
+          <h3 className="text-lg font-semibold whitespace-nowrap">History</h3>
+          <span className="text-xs text-white/50 whitespace-nowrap">{filteredItems.length || ""}</span>
+
+          {/* Search Input */}
+          <div className="relative flex-1 max-w-xs">
+            <svg
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40"
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t("historyPanel.search")}
+              className="w-full pl-8 pr-3 py-1.5 rounded-md bg-white/10 border border-white/10 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/30"
+            />
           </div>
 
-          {/* Search and Filter Row */}
-          <div className="flex gap-3 items-center">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
-                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t("historyPanel.search")}
-                className="w-full pl-10 pr-4 py-2 rounded-lg bg-white/10 border border-white/10 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/30"
-              />
-            </div>
+          {/* Time Filter */}
+          <select
+            value={timeFilter}
+            onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
+            className="px-2 py-1.5 rounded-md bg-white/10 border border-white/10 text-sm text-white focus:outline-none focus:border-white/30 cursor-pointer"
+          >
+            {timeFilterOptions.map(opt => (
+              <option key={opt.value} value={opt.value} className="bg-gray-800">
+                {t(opt.labelKey)}
+              </option>
+            ))}
+          </select>
 
-            {/* Time Filter */}
-            <select
-              value={timeFilter}
-              onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
-              className="px-3 py-2 rounded-lg bg-white/10 border border-white/10 text-sm text-white focus:outline-none focus:border-white/30 cursor-pointer"
+          {/* Action Buttons */}
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={loadFirstPage}
+              className="text-gray-300 hover:text-white p-1.5 rounded-full hover:bg-white/10"
+              title={t("toolbar.redo")}
             >
-              {timeFilterOptions.map(opt => (
-                <option key={opt.value} value={opt.value} className="bg-gray-800">
-                  {t(opt.labelKey)}
-                </option>
-              ))}
-            </select>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M21 12a9 9 0 1 1-3-6.7" />
+                <polyline points="21 3 21 9 15 9" />
+              </svg>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-gray-300 hover:text-white p-1.5 rounded-full hover:bg-white/10"
+              title="切换密钥"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M10 17l1 1 7-7-7-7-1 1" />
+                <path d="M14 11H3" />
+                <path d="M21 12a9 9 0 0 0-9-9" />
+                <path d="M12 21a9 9 0 0 0 9-9" />
+              </svg>
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-300 hover:text-white p-1.5 rounded-full hover:bg-white/10"
+              title="关闭（Esc）"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -411,50 +409,83 @@ export const HistoryPanel: React.FC<Props> = ({ isOpen, onClose, onInsert, onLog
       {/* Preview Modal */}
       {previewItem && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md"
-          onClick={() => setPreviewItem(null)}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-md"
+          onClick={() => { setPreviewItem(null); setPreviewZoom(1); }}
         >
-          <div
-            className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close Button */}
-            <button
-              onClick={() => setPreviewItem(null)}
-              className="absolute -top-12 right-0 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
-              title="关闭（Esc）"
+          {/* Main Container - Horizontal Layout */}
+          <div className="flex items-start gap-6 max-w-[95vw] max-h-[90vh] p-4">
+            {/* Left: Image with zoom */}
+            <div
+              className="relative flex-shrink-0 overflow-auto rounded-lg bg-black/40"
+              style={{ maxWidth: '65vw', maxHeight: '85vh' }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
+              {/* Zoom Controls */}
+              <div className="absolute top-2 left-2 z-10 flex gap-1">
+                <button
+                  onClick={() => setPreviewZoom(z => Math.max(0.25, z - 0.25))}
+                  className="p-1.5 rounded bg-black/60 hover:bg-black/80 text-white"
+                  title="缩小"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                    <path d="M8 11h6" />
+                  </svg>
+                </button>
+                <span className="px-2 py-1 rounded bg-black/60 text-white text-xs">{Math.round(previewZoom * 100)}%</span>
+                <button
+                  onClick={() => setPreviewZoom(z => Math.min(4, z + 0.25))}
+                  className="p-1.5 rounded bg-black/60 hover:bg-black/80 text-white"
+                  title="放大"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                    <path d="M11 8v6M8 11h6" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setPreviewZoom(1)}
+                  className="p-1.5 rounded bg-black/60 hover:bg-black/80 text-white text-xs"
+                  title="重置"
+                >
+                  1:1
+                </button>
+              </div>
 
-            {/* Media */}
-            {previewItem.kind === "video" ? (
-              <video
-                src={mediaSrc(previewItem.id)}
-                className="max-w-full max-h-[80vh] rounded-lg"
-                controls
-                autoPlay
-                playsInline
-              />
-            ) : (
-              <img
-                src={mediaSrc(previewItem.id)}
-                className="max-w-full max-h-[80vh] rounded-lg object-contain"
-              />
-            )}
+              {/* Media */}
+              {previewItem.kind === "video" ? (
+                <video
+                  src={mediaSrc(previewItem.id)}
+                  className="rounded-lg"
+                  style={{ transform: `scale(${previewZoom})`, transformOrigin: 'top left' }}
+                  controls
+                  autoPlay
+                  playsInline
+                />
+              ) : (
+                <img
+                  src={mediaSrc(previewItem.id)}
+                  className="rounded-lg"
+                  style={{ transform: `scale(${previewZoom})`, transformOrigin: 'top left' }}
+                />
+              )}
+            </div>
 
-            {/* Prompt below preview */}
-            {previewItem.prompt && (
-              <div className="mt-4 max-w-2xl">
+            {/* Right: Prompt and Actions */}
+            <div
+              className="flex flex-col gap-4 w-80 flex-shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Prompt */}
+              {previewItem.prompt && (
                 <button
                   onClick={(e) => handleCopyPrompt(previewItem, e)}
-                  className="w-full text-left px-4 py-3 rounded-lg bg-white/10 hover:bg-white/15 transition-colors"
+                  className="text-left p-4 rounded-lg bg-white/10 hover:bg-white/15 transition-colors"
                   title={t("historyPanel.copyPrompt")}
                 >
-                  <p className="text-sm text-white/80">
+                  <p className="text-sm text-white/90 leading-relaxed">
                     {copiedId === previewItem.id ? (
                       <span className="text-green-400 font-medium">{t("historyPanel.copied")}</span>
                     ) : (
@@ -462,22 +493,23 @@ export const HistoryPanel: React.FC<Props> = ({ isOpen, onClose, onInsert, onLog
                     )}
                   </p>
                 </button>
-              </div>
-            )}
+              )}
 
-            {/* Insert button in preview */}
-            <button
-              onClick={() => {
-                onInsert(previewItem);
-                setPreviewItem(null);
-              }}
-              className="mt-4 px-6 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-medium transition-colors flex items-center gap-2"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              {t("historyPanel.insertToCanvas")}
-            </button>
+              {/* Insert Button */}
+              <button
+                onClick={() => {
+                  onInsert(previewItem);
+                  setPreviewItem(null);
+                  setPreviewZoom(1);
+                }}
+                className="px-6 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                {t("historyPanel.insertToCanvas")}
+              </button>
+            </div>
           </div>
         </div>
       )}
