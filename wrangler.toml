@@ -1,0 +1,32 @@
+name = "bananapod"
+main = "worker/src/index.ts"
+compatibility_date = "2025-12-13"
+
+# Serve the Vite build output from the same Worker (Workers + Assets).
+assets = { directory = "./dist", binding = "ASSETS" }
+
+# Bindings (fill ids/names after you create them via wrangler)
+# KV: per-user allowlist + session mapping
+kv_namespaces = [
+  { binding = "USERS_KV", id = "32ab7f8d65c4486d80a6755087c98a19" }
+]
+
+# R2: generated media storage
+r2_buckets = [
+  { binding = "MEDIA_BUCKET", bucket_name = "bananapod-data" }
+]
+
+# D1: history metadata
+d1_databases = [
+  { binding = "DB", database_name = "bananapod", database_id = "da4ec39e-14d7-4934-9b7a-0f9aee64e7ce", migrations_dir = "worker/migrations" }
+]
+
+# Secrets:
+# - GEMINI_API_KEY (set via: wrangler secret put GEMINI_API_KEY)
+
+# Optional:
+# - BASE_URL (default is https://generativelanguage.googleapis.com)
+[vars]
+BASE_URL = "https://gemini.lordorange.top"
+
+

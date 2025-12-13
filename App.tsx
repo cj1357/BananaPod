@@ -11,9 +11,11 @@ import { Loader } from './components/Loader';
 import { CanvasSettings } from './components/CanvasSettings';
 import { LayerPanel } from './components/LayerPanel';
 import { BoardPanel } from './components/BoardPanel';
+import { HistoryPanel } from './components/HistoryPanel';
+import { AuthGate, getStoredUserKey, clearStoredUserKey } from './components/AuthGate';
 import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, TextElement, ArrowElement, UserEffect, LineElement, WheelAction, GroupElement, Board, VideoElement, ImageAspectRatio, ImageSize } from './types';
-import { editImage, generateImageFromText, generateVideo } from './services/geminiService';
-import { fileToDataUrl, blobToDataUrl, loadImageWithTimeout } from './utils/fileUtils';
+import { authCheck, editImage, generateImageFromText, videoStart, videoStatus, type ClientImageRef, type HistoryItem } from './services/apiService';
+import { fileToDataUrl, loadImageWithTimeout } from './utils/fileUtils';
 import { translations } from './translations';
 import { loadBoards, loadSettings, debouncedSaveBoards, debouncedSaveSettings, clearAllData, requestPersistentStorage, getStorageInfo, type AppSettings } from './services/storageService';
 
@@ -364,6 +366,10 @@ const createNewBoard = (name: string): Board => {
 const App: React.FC = () => {
     // Initialization state
     const [isInitializing, setIsInitializing] = useState(true);
+
+    // Auth gate (per-user access key)
+    const [isAuthed, setIsAuthed] = useState(false);
+    const [isAuthChecking, setIsAuthChecking] = useState(true);
     
     const [boards, setBoards] = useState<Board[]>(() => [createNewBoard('Board 1')]);
     const [activeBoardId, setActiveBoardId] = useState<string>(boards[0].id);
@@ -397,6 +403,7 @@ const App: React.FC = () => {
     const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
     const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
     const [isBoardPanelOpen, setIsBoardPanelOpen] = useState(false);
+    const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
     const [wheelAction, setWheelAction] = useState<WheelAction>('zoom');
     const [croppingState, setCroppingState] = useState<{ elementId: string; originalElement: ImageElement; cropBox: Rect } | null>(null);
     const [alignmentGuides, setAlignmentGuides] = useState<Guide[]>([]);
@@ -417,8 +424,29 @@ const App: React.FC = () => {
     const [progressMessage, setProgressMessage] = useState<string>('');
     
     // API Configuration
-    const [apiKey, setApiKey] = useState<string>('');
-    const [apiBaseUrl, setApiBaseUrl] = useState<string>('');
+    // (Moved to Worker; no client-side API key)
+
+    // Verify stored userKey -> establish Worker session cookie
+    useEffect(() => {
+        const run = async () => {
+            const userKey = getStoredUserKey();
+            if (!userKey) {
+                setIsAuthed(false);
+                setIsAuthChecking(false);
+                return;
+            }
+            try {
+                await authCheck(userKey);
+                setIsAuthed(true);
+            } catch {
+                clearStoredUserKey();
+                setIsAuthed(false);
+            } finally {
+                setIsAuthChecking(false);
+            }
+        };
+        run();
+    }, []);
     
     // Load data from IndexedDB on mount
     useEffect(() => {
@@ -459,8 +487,6 @@ const App: React.FC = () => {
                     if (savedSettings.videoAspectRatio) setVideoAspectRatio(savedSettings.videoAspectRatio);
                     if (savedSettings.imageAspectRatio) setImageAspectRatio(savedSettings.imageAspectRatio);
                     if (savedSettings.imageSize) setImageSize(savedSettings.imageSize);
-                    if (savedSettings.apiKey) setApiKey(savedSettings.apiKey);
-                    if (savedSettings.apiBaseUrl) setApiBaseUrl(savedSettings.apiBaseUrl);
                 }
             } catch (err) {
                 console.error('Failed to load data from IndexedDB:', err);
@@ -515,8 +541,6 @@ const App: React.FC = () => {
                 videoAspectRatio,
                 imageAspectRatio,
                 imageSize,
-                apiKey,
-                apiBaseUrl,
             };
             debouncedSaveSettings(settings);
         }
@@ -533,8 +557,6 @@ const App: React.FC = () => {
         videoAspectRatio,
         imageAspectRatio,
         imageSize,
-        apiKey,
-        apiBaseUrl,
     ]);
 
     const handleAddUserEffect = useCallback((effect: UserEffect) => {
@@ -1444,6 +1466,23 @@ const App: React.FC = () => {
     }, [editingElement?.text, setElements]);
 
 
+    const getMediaIdFromHref = (href: string): string | null => {
+        try {
+            const u = new URL(href, window.location.origin);
+            if (!u.pathname.startsWith('/api/media/')) return null;
+            const id = u.pathname.slice('/api/media/'.length);
+            return id ? decodeURIComponent(id) : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const imageElementToRef = (img: ImageElement): ClientImageRef => {
+        const mediaId = getMediaIdFromHref(img.href);
+        if (mediaId) return { kind: 'mediaId', mediaId };
+        return { kind: 'dataUrl', dataUrl: img.href, mimeType: img.mimeType };
+    };
+
     const handleGenerate = async () => {
         if (!prompt.trim()) {
             setError('Please enter a prompt.');
@@ -1458,38 +1497,248 @@ const App: React.FC = () => {
             try {
                 const selectedElements = elements.filter(el => selectedElementIds.includes(el.id));
                 const imageElement = selectedElements.find(el => el.type === 'image') as ImageElement | undefined;
-                
+
                 if (selectedElementIds.length > 1 || (selectedElementIds.length === 1 && !imageElement)) {
                     setError('For video generation, please select a single image or no elements.');
                     setIsLoading(false);
                     return;
                 }
-                
-                const { videoBlob, mimeType } = await generateVideo(
-                    { apiKey, baseUrl: apiBaseUrl || undefined },
-                    prompt, 
-                    videoAspectRatio, 
-                    (message) => setProgressMessage(message), 
-                    imageElement ? { href: imageElement.href, mimeType: imageElement.mimeType } : undefined
-                );
 
-                setProgressMessage('Processing video...');
-                // Convert blob to data URL for persistence
-                const videoDataUrl = await blobToDataUrl(videoBlob);
+                setProgressMessage('Starting video generation...');
+                const { operationName } = await videoStart(prompt, videoAspectRatio, imageElement ? imageElementToRef(imageElement) : undefined);
+
+                const progressMessages = [
+                    'Rendering frames...',
+                    'Compositing video...',
+                    'Applying final touches...',
+                    'Almost there...',
+                ];
+                let i = 0;
+
+                while (true) {
+                    setProgressMessage(progressMessages[i % progressMessages.length]);
+                    i++;
+                    const st = await videoStatus(operationName);
+                    if (!st.done) {
+                        await new Promise(r => setTimeout(r, 8000));
+                        continue;
+                    }
+                    if (st.error) {
+                        setError(`Video generation failed: ${st.error}`);
+                        setIsLoading(false);
+                        return;
+                    }
+                    if (!st.mediaUrl || !st.mimeType) {
+                        setError('Video generation completed, but missing output.');
+                        setIsLoading(false);
+                        return;
+                    }
+
+                    setProgressMessage('Loading video...');
+                    const video = document.createElement('video');
+                    video.onloadedmetadata = () => {
+                        if (!svgRef.current) return;
+
+                        let newWidth = video.videoWidth;
+                        let newHeight = video.videoHeight;
+                        const MAX_DIM = 800;
+                        if (newWidth > MAX_DIM || newHeight > MAX_DIM) {
+                            const ratio = newWidth / newHeight;
+                            if (ratio > 1) {
+                                newWidth = MAX_DIM;
+                                newHeight = MAX_DIM / ratio;
+                            } else {
+                                newHeight = MAX_DIM;
+                                newWidth = MAX_DIM * ratio;
+                            }
+                        }
+
+                        const svgBounds = svgRef.current.getBoundingClientRect();
+                        const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 };
+                        const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y);
+                        const x = canvasPoint.x - (newWidth / 2);
+                        const y = canvasPoint.y - (newHeight / 2);
+
+                        const newVideoElement: VideoElement = {
+                            id: generateId(), type: 'video', name: 'Generated Video',
+                            x, y,
+                            width: newWidth,
+                            height: newHeight,
+                            href: st.mediaUrl!,
+                            mimeType: st.mimeType!,
+                        };
+
+                        commitAction(prev => [...prev, newVideoElement]);
+                        setSelectedElementIds([newVideoElement.id]);
+                        setIsLoading(false);
+                    };
+
+                    video.onerror = () => {
+                        setError('Could not load generated video metadata.');
+                        setIsLoading(false);
+                    };
+
+                    video.src = st.mediaUrl;
+                    return;
+                }
+            } catch (err) {
+                const error = err as Error;
+                setError(`Video generation failed: ${error.message}`);
+                console.error("Video generation failed:", error);
+                setIsLoading(false);
+            }
+            return;
+        }
+
+        // IMAGE GENERATION LOGIC
+        try {
+            const isEditing = selectedElementIds.length > 0;
+            const imageConfig = {
+                ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
+                imageSize,
+            };
+
+            if (isEditing) {
+                const selectedElements = elements.filter(el => selectedElementIds.includes(el.id));
+                const imageElements = selectedElements.filter(el => el.type === 'image') as ImageElement[];
+                const maskPaths = selectedElements.filter(el => el.type === 'path' && el.strokeOpacity && el.strokeOpacity < 1) as PathElement[];
+
+                // Inpainting logic: selection is ONLY one image and one or more mask paths
+                if (imageElements.length === 1 && maskPaths.length > 0 && selectedElements.length === (1 + maskPaths.length)) {
+                    const baseImage = imageElements[0];
+                    const maskData = await rasterizeMask(maskPaths, baseImage);
+
+                    const result = await editImage(
+                        prompt,
+                        [imageElementToRef(baseImage)],
+                        { kind: 'dataUrl', dataUrl: maskData.href, mimeType: maskData.mimeType },
+                        imageConfig
+                    );
+
+                    if (!result.ok) {
+                        setError(result.textResponse || 'Inpainting failed to produce an image.');
+                        setIsLoading(false);
+                        return;
+                    }
+
+                    const img = await loadImageWithTimeout(result.mediaUrl);
+                    const maskPathIds = new Set(maskPaths.map(p => p.id));
+
+                    commitAction(prev =>
+                        prev.map(el => {
+                            if (el.id === baseImage.id && el.type === 'image') {
+                                return {
+                                    ...el,
+                                    href: result.mediaUrl,
+                                    mimeType: result.mimeType,
+                                    width: img.width,
+                                    height: img.height,
+                                };
+                            }
+                            return el;
+                        }).filter(el => !maskPathIds.has(el.id))
+                    );
+                    setSelectedElementIds([baseImage.id]);
+                    setIsLoading(false);
+                    return;
+                }
+
+                // Regular edit/combine logic
+                const refPromises = selectedElements.map(async (el): Promise<ClientImageRef> => {
+                    if (el.type === 'image') return imageElementToRef(el as ImageElement);
+                    if (el.type === 'video') throw new Error("Cannot use video elements in image generation.");
+                    const raster = await rasterizeElement(el as Exclude<Element, ImageElement | VideoElement>);
+                    return { kind: 'dataUrl', dataUrl: raster.href, mimeType: raster.mimeType };
+                });
+                const refs = await Promise.all(refPromises);
+
+                const result = await editImage(prompt, refs, undefined, imageConfig);
+                if (!result.ok) {
+                    setError(result.textResponse || 'Generation failed to produce an image.');
+                    setIsLoading(false);
+                    return;
+                }
+
+                const img = await loadImageWithTimeout(result.mediaUrl);
+                let minX = Infinity, minY = Infinity, maxX = -Infinity;
+                selectedElements.forEach(el => {
+                    const bounds = getElementBounds(el);
+                    minX = Math.min(minX, bounds.x);
+                    minY = Math.min(minY, bounds.y);
+                    maxX = Math.max(maxX, bounds.x + bounds.width);
+                });
+                const x = maxX + 20;
+                const y = minY;
+
+                const newImage: ImageElement = {
+                    id: generateId(), type: 'image', x, y, name: 'Generated Image',
+                    width: img.width, height: img.height,
+                    href: result.mediaUrl, mimeType: result.mimeType,
+                };
+                commitAction(prev => [...prev, newImage]);
+                setSelectedElementIds([newImage.id]);
+                setIsLoading(false);
+                return;
+            }
+
+            // Generate from scratch
+            const result = await generateImageFromText(prompt, imageConfig);
+            if (!result.ok) {
+                setError(result.textResponse || 'Generation failed to produce an image.');
+                setIsLoading(false);
+                return;
+            }
+
+            const img = await loadImageWithTimeout(result.mediaUrl);
+            if (!svgRef.current) {
+                setIsLoading(false);
+                return;
+            }
+            const svgBounds = svgRef.current.getBoundingClientRect();
+            const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 };
+            const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y);
+            const x = canvasPoint.x - (img.width / 2);
+            const y = canvasPoint.y - (img.height / 2);
+
+            const newImage: ImageElement = {
+                id: generateId(), type: 'image', x, y, name: 'Generated Image',
+                width: img.width, height: img.height,
+                href: result.mediaUrl, mimeType: result.mimeType,
+            };
+            commitAction(prev => [...prev, newImage]);
+            setSelectedElementIds([newImage.id]);
+            setIsLoading(false);
+        } catch (err) {
+            const error = err as Error;
+            setError(`An error occurred during generation: ${error.message}`);
+            console.error("Generation failed:", error);
+            setIsLoading(false);
+        }
+    };
+    
+    const handleInsertHistoryItem = async (item: HistoryItem) => {
+        try {
+            setIsHistoryPanelOpen(false);
+            setIsLoading(true);
+            setError(null);
+            setProgressMessage(language === 'zho' ? '正在加载历史媒体...' : 'Loading media...');
+
+            const href = `/api/media/${encodeURIComponent(item.id)}`;
+
+            if (item.kind === 'video') {
                 const video = document.createElement('video');
-                
                 video.onloadedmetadata = () => {
                     if (!svgRef.current) return;
-                    
+
                     let newWidth = video.videoWidth;
                     let newHeight = video.videoHeight;
                     const MAX_DIM = 800;
                     if (newWidth > MAX_DIM || newHeight > MAX_DIM) {
                         const ratio = newWidth / newHeight;
-                        if (ratio > 1) { // landscape
+                        if (ratio > 1) {
                             newWidth = MAX_DIM;
                             newHeight = MAX_DIM / ratio;
-                        } else { // portrait or square
+                        } else {
                             newHeight = MAX_DIM;
                             newWidth = MAX_DIM * ratio;
                         }
@@ -1502,195 +1751,56 @@ const App: React.FC = () => {
                     const y = canvasPoint.y - (newHeight / 2);
 
                     const newVideoElement: VideoElement = {
-                        id: generateId(), type: 'video', name: 'Generated Video',
+                        id: generateId(), type: 'video', name: 'History Video',
                         x, y,
                         width: newWidth,
                         height: newHeight,
-                        href: videoDataUrl,
-                        mimeType,
+                        href,
+                        mimeType: item.mime_type || 'video/mp4',
                     };
-
                     commitAction(prev => [...prev, newVideoElement]);
                     setSelectedElementIds([newVideoElement.id]);
                     setIsLoading(false);
                 };
-
                 video.onerror = () => {
-                    setError('Could not load generated video metadata.');
+                    setError(language === 'zho' ? '无法加载视频信息。' : 'Failed to load video metadata.');
                     setIsLoading(false);
                 };
-                
-                video.src = videoDataUrl;
-
-            } catch (err) {
-                 const error = err as Error; 
-                 setError(`Video generation failed: ${error.message}`); 
-                 console.error("Video generation failed:", error);
-                 setIsLoading(false);
-            }
-            return;
-        }
-
-
-        // IMAGE GENERATION LOGIC
-        try {
-            const isEditing = selectedElementIds.length > 0;
-
-            if (isEditing) {
-                const selectedElements = elements.filter(el => selectedElementIds.includes(el.id));
-                const imageElements = selectedElements.filter(el => el.type === 'image') as ImageElement[];
-                const maskPaths = selectedElements.filter(el => el.type === 'path' && el.strokeOpacity && el.strokeOpacity < 1) as PathElement[];
-
-                // Inpainting logic: selection is ONLY one image and one or more mask paths
-                if (imageElements.length === 1 && maskPaths.length > 0 && selectedElements.length === (1 + maskPaths.length)) {
-                    const baseImage = imageElements[0];
-                    const maskData = await rasterizeMask(maskPaths, baseImage);
-                    const imageConfig = {
-                        ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
-                        imageSize,
-                    };
-                    const result = await editImage(
-                        { apiKey, baseUrl: apiBaseUrl || undefined },
-                        [{ href: baseImage.href, mimeType: baseImage.mimeType }],
-                        prompt,
-                        { href: maskData.href, mimeType: maskData.mimeType },
-                        imageConfig
-                    );
-                    
-                    if (result.newImageBase64 && result.newImageMimeType) {
-                        const { newImageBase64, newImageMimeType } = result;
-                        const imageSrc = `data:${newImageMimeType};base64,${newImageBase64}`;
-
-                        try {
-                            const img = await loadImageWithTimeout(imageSrc);
-                            const maskPathIds = new Set(maskPaths.map(p => p.id));
-                            commitAction(prev => 
-                                prev.map(el => {
-                                    if (el.id === baseImage.id && el.type === 'image') {
-                                        return {
-                                            ...el,
-                                            href: imageSrc,
-                                            width: img.width,
-                                            height: img.height,
-                                        };
-                                    }
-                                    return el;
-                                }).filter(el => !maskPathIds.has(el.id))
-                            );
-                            setSelectedElementIds([baseImage.id]);
-                            setIsLoading(false);
-                        } catch (imgError) {
-                            setError('Failed to load the generated image.');
-                            setIsLoading(false);
-                        }
-                    } else {
-                        setError(result.textResponse || 'Inpainting failed to produce an image.');
-                        setIsLoading(false);
-                    }
-                    return; // End execution for inpainting path
-                }
-                
-                // Regular edit/combine logic
-                const imagePromises = selectedElements.map(el => {
-                    if (el.type === 'image') return Promise.resolve({ href: el.href, mimeType: el.mimeType });
-                    if (el.type === 'video') return Promise.reject(new Error("Cannot use video elements in image generation."));
-                    return rasterizeElement(el as Exclude<Element, ImageElement | VideoElement>);
-                });
-                const imagesToProcess = await Promise.all(imagePromises);
-                const imageConfigForEdit = {
-                    ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
-                    imageSize,
-                };
-                const result = await editImage({ apiKey, baseUrl: apiBaseUrl || undefined }, imagesToProcess, prompt, undefined, imageConfigForEdit);
-
-                if (result.newImageBase64 && result.newImageMimeType) {
-                    const { newImageBase64, newImageMimeType } = result;
-                    const imageSrc = `data:${newImageMimeType};base64,${newImageBase64}`;
-                    
-                    try {
-                        const img = await loadImageWithTimeout(imageSrc);
-                        let minX = Infinity, minY = Infinity, maxX = -Infinity;
-                        selectedElements.forEach(el => {
-                            const bounds = getElementBounds(el);
-                            minX = Math.min(minX, bounds.x);
-                            minY = Math.min(minY, bounds.y);
-                            maxX = Math.max(maxX, bounds.x + bounds.width);
-                        });
-                        const x = maxX + 20;
-                        const y = minY;
-                        
-                        const newImage: ImageElement = {
-                            id: generateId(), type: 'image', x, y, name: 'Generated Image',
-                            width: img.width, height: img.height,
-                            href: imageSrc, mimeType: newImageMimeType,
-                        };
-                        commitAction(prev => [...prev, newImage]);
-                        setSelectedElementIds([newImage.id]);
-                        setIsLoading(false);
-                    } catch (imgError) {
-                        setError('Failed to load the generated image.');
-                        setIsLoading(false);
-                    }
-                } else {
-                    setError(result.textResponse || 'Generation failed to produce an image.');
-                    setIsLoading(false);
-                }
-
-            } else {
-                // Generate from scratch
-                const imageConfigForGenerate = {
-                    ...(imageAspectRatio !== 'auto' && { aspectRatio: imageAspectRatio }),
-                    imageSize,
-                };
-                const result = await generateImageFromText({ apiKey, baseUrl: apiBaseUrl || undefined }, prompt, imageConfigForGenerate);
-
-                if (result.newImageBase64 && result.newImageMimeType) {
-                    const { newImageBase64, newImageMimeType } = result;
-                    const imageSrc = `data:${newImageMimeType};base64,${newImageBase64}`;
-                    
-                    try {
-                        const img = await loadImageWithTimeout(imageSrc);
-                        if (!svgRef.current) {
-                            setIsLoading(false);
-                            return;
-                        }
-                        const svgBounds = svgRef.current.getBoundingClientRect();
-                        const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 };
-                        const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y);
-                        const x = canvasPoint.x - (img.width / 2);
-                        const y = canvasPoint.y - (img.height / 2);
-                        
-                        const newImage: ImageElement = {
-                            id: generateId(), type: 'image', x, y, name: 'Generated Image',
-                            width: img.width, height: img.height,
-                            href: imageSrc, mimeType: newImageMimeType,
-                        };
-                        commitAction(prev => [...prev, newImage]);
-                        setSelectedElementIds([newImage.id]);
-                        setIsLoading(false);
-                    } catch (imgError) {
-                        setError('Failed to load the generated image.');
-                        setIsLoading(false);
-                    }
-                } else { 
-                    setError(result.textResponse || 'Generation failed to produce an image.');
-                    setIsLoading(false);
-                }
-            }
-        } catch (err) {
-            const error = err as Error; 
-            let friendlyMessage = `An error occurred during generation: ${error.message}`;
-
-            if (error.message && (error.message.includes('429') || error.message.toUpperCase().includes('RESOURCE_EXHAUSTED'))) {
-                friendlyMessage = "API quota exceeded. Please check your Google AI Studio plan and billing details, or try again later.";
+                video.src = href;
+                return;
             }
 
-            setError(friendlyMessage); 
-            console.error("Generation failed:", error);
+            const img = await loadImageWithTimeout(href);
+            if (!svgRef.current) {
+                setIsLoading(false);
+                return;
+            }
+            const svgBounds = svgRef.current.getBoundingClientRect();
+            const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 };
+            const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y);
+            const x = canvasPoint.x - (img.width / 2);
+            const y = canvasPoint.y - (img.height / 2);
+
+            const newImage: ImageElement = {
+                id: generateId(), type: 'image', x, y, name: 'History Image',
+                width: img.width, height: img.height,
+                href, mimeType: item.mime_type || 'image/png',
+            };
+            commitAction(prev => [...prev, newImage]);
+            setSelectedElementIds([newImage.id]);
+            setIsLoading(false);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : (language === 'zho' ? '插入失败' : 'Insert failed'));
             setIsLoading(false);
         }
     };
-    
+
+    const handleLogout = () => {
+        clearStoredUserKey();
+        setIsHistoryPanelOpen(false);
+        setIsAuthed(false);
+    };
+
     const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); }, []);
     const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); if (e.dataTransfer.files && e.dataTransfer.files[0]) { handleAddImageElement(e.dataTransfer.files[0]); } }, [handleAddImageElement]);
 
@@ -2037,6 +2147,21 @@ const App: React.FC = () => {
         );
     }
 
+    if (isAuthChecking) {
+        return (
+            <div className="w-screen h-screen flex items-center justify-center bg-gray-900">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-600 border-t-white mx-auto mb-4"></div>
+                    <p className="text-gray-400">{language === 'zho' ? '正在验证密钥...' : 'Checking access key...'}</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!isAuthed) {
+        return <AuthGate onAuthed={() => setIsAuthed(true)} />;
+    }
+
     return (
         <div className="w-screen h-screen flex flex-col font-sans" style={{ backgroundColor: canvasBackgroundColor }} onDragOver={handleDragOver} onDrop={handleDrop}>
             {isLoading && <Loader progressMessage={progressMessage} />}
@@ -2073,10 +2198,13 @@ const App: React.FC = () => {
                 setButtonTheme={setButtonTheme}
                 wheelAction={wheelAction}
                 setWheelAction={setWheelAction}
-                apiKey={apiKey}
-                setApiKey={setApiKey}
-                apiBaseUrl={apiBaseUrl}
-                setApiBaseUrl={setApiBaseUrl}
+                t={t}
+            />
+            <HistoryPanel
+                isOpen={isHistoryPanelOpen}
+                onClose={() => setIsHistoryPanelOpen(false)}
+                onInsert={handleInsertHistoryItem}
+                onLogout={handleLogout}
                 t={t}
             />
             <Toolbar
@@ -2092,6 +2220,7 @@ const App: React.FC = () => {
                 onSettingsClick={() => setIsSettingsPanelOpen(true)}
                 onLayersClick={() => setIsLayerPanelOpen(prev => !prev)}
                 onBoardsClick={() => setIsBoardPanelOpen(prev => !prev)}
+                onHistoryClick={() => setIsHistoryPanelOpen(prev => !prev)}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 canUndo={historyIndex > 0}

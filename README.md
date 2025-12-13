@@ -101,14 +101,64 @@ View your app in AI Studio: https://ai.studio/apps/drive/1CsvkMqNnxdUrmJZYeSXNZD
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
+**Prerequisites:** Node.js
 
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+2. Build once (Worker serves `dist/` as static assets):
+   `npm run build`
+3. Run the Worker locally (recommended):
+   `npm run dev:worker`
+
+> 说明：本项目已改为 **Cloudflare Worker 代调用 Gemini**。前端不再直连 Google API，直接跑 `npm run dev`（Vite）默认不会带上 Worker 的 `/api/*`。本地开发建议用 `wrangler dev`。
+
+## Deploy to Cloudflare Worker + R2 + D1 + KV
+
+### 1) 创建云资源
+
+1. **创建 KV（用户 allowlist + session）**：
+   - `wrangler kv namespace create USERS_KV`
+2. **创建 R2 桶（生成媒体存储）**：
+   - `wrangler r2 bucket create <your-r2-bucket-name>`
+3. **创建 D1 数据库（历史记录）**：
+   - `wrangler d1 create <your-d1-name>`
+4. **应用 D1 迁移**：
+   - `wrangler d1 migrations apply <your-d1-name>`
+
+### 2) 配置 `wrangler.toml`
+
+编辑 [`wrangler.toml`](wrangler.toml)，把以下占位符替换成你自己的：
+- KV：`REPLACE_WITH_KV_NAMESPACE_ID`
+- R2：`REPLACE_WITH_R2_BUCKET_NAME`
+- D1：`REPLACE_WITH_D1_DB_NAME` / `REPLACE_WITH_D1_DB_ID`
+
+### 3) 配置 Gemini Key（Worker 端统一密钥）
+
+在项目根目录执行：
+- `wrangler secret put GEMINI_API_KEY`
+
+### 3.1) （可选）配置 BASE_URL
+
+默认会使用：`https://generativelanguage.googleapis.com`  
+如果你有代理/网关/自建转发，可以在 [`wrangler.toml`](wrangler.toml) 的 `[vars]` 里设置：
+- `BASE_URL = "https://your-base-url"`
+
+### 4) 写入允许访问的 userKey（明文）
+
+这个版本按你的要求：**KV 里直接存明文 userKey**，值为 `1` 表示允许：
+- `wrangler kv:key put --binding USERS_KV "<userKey>" "1"`
+
+### 5) 部署
+
+1. 构建：`npm run build`
+2. 部署：`npm run deploy`
+
+### 6) 使用方式
+
+进入网页后输入你的 **userKey**（每个用户自己的访问密钥），前端会存到 localStorage，并由 Worker 下发 session cookie：
+- **生成的图片/视频**：存入 R2
+- **历史记录**：存入 D1，可在 History 面板查看/插入/删除
 
 
 
