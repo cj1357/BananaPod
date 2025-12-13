@@ -31,6 +31,12 @@ export interface ImageElement extends CanvasElementBase {
   height: number;
   mimeType: string;
   borderRadius?: number;
+  /**
+   * 图片尺寸状态：生成/替换时可能先用占位宽高，待图片真实尺寸拿到后再回填。
+   * - placeholder: 目前还是占位尺寸（需要后台回填 naturalWidth/naturalHeight）
+   * - resolved: 已回填/确认过真实尺寸（避免每次刷新都重复探测）
+   */
+  sizeStatus?: 'placeholder' | 'resolved';
 }
 
 export interface VideoElement extends CanvasElementBase {

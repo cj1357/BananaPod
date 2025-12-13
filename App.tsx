@@ -511,6 +511,7 @@ const App: React.FC = () => {
     const editingTextareaRef = useRef<HTMLTextAreaElement>(null);
     const previousToolRef = useRef<Tool>('select');
     const spacebarDownTime = useRef<number | null>(null);
+    const imageSizeUpdateInFlight = useRef<Set<string>>(new Set());
     elementsRef.current = elements;
 
     useEffect(() => {
@@ -622,6 +623,82 @@ const App: React.FC = () => {
             }
         });
     };
+
+    // 刷新兜底：如果图片元素仍是“占位宽高”，在启动/恢复后也要自动回填真实尺寸。
+    // 注意：必须放在 setElements 定义之后，避免 TDZ 导致渲染期 ReferenceError（白屏）。
+    useEffect(() => {
+        if (isInitializing) return;
+
+        const MAX_DIM = imageSize === '4K' ? 4096 : imageSize === '2K' ? 2048 : 1024;
+        const LONG_SIDES = new Set([1024, 2048, 4096]);
+
+        const looksLikePlaceholderSize = (w: number, h: number) => {
+            if (!(w > 0 && h > 0)) return false;
+            const long = Math.max(w, h);
+            const short = Math.min(w, h);
+            // 只要长边是常见占位尺寸，就认为可能需要回填（回填后会标记 resolved，避免重复探测）
+            return LONG_SIDES.has(long) && short > 0;
+        };
+
+        const clampToMaxDim = (w: number, h: number): { w: number; h: number } => {
+            if (!(w > 0 && h > 0)) return { w, h };
+            if (w <= MAX_DIM && h <= MAX_DIM) return { w, h };
+            const ratio = w / h;
+            if (ratio > 1) return { w: MAX_DIM, h: Math.round(MAX_DIM / ratio) };
+            return { w: Math.round(MAX_DIM * ratio), h: MAX_DIM };
+        };
+
+        const getImageNaturalSize = async (href: string): Promise<{ w: number; h: number } | null> => {
+            // 1) Try HTMLImageElement first
+            try {
+                const img = await loadImageWithTimeout(href);
+                const w = (img as any).naturalWidth || img.width;
+                const h = (img as any).naturalHeight || img.height;
+                if (w > 0 && h > 0) return { w, h };
+            } catch { /* ignore */ }
+
+            // 2) Fallback: fetch + createImageBitmap (more robust with cookies)
+            try {
+                const res = await fetch(href, { credentials: 'include' });
+                if (!res.ok) return null;
+                const blob = await res.blob();
+                const bmp = await createImageBitmap(blob);
+                if (bmp.width > 0 && bmp.height > 0) return { w: bmp.width, h: bmp.height };
+            } catch { /* ignore */ }
+
+            return null;
+        };
+
+        const candidates = elements.filter((el): el is ImageElement => el.type === 'image').filter(el => {
+            if (!el.href) return false;
+            if (el.sizeStatus === 'resolved') return false;
+            if (el.sizeStatus === 'placeholder') return true;
+            // 兼容旧数据：没写 sizeStatus 但宽高像占位值，也触发一次回填
+            return looksLikePlaceholderSize(el.width, el.height);
+        });
+
+        for (const el of candidates) {
+            if (imageSizeUpdateInFlight.current.has(el.id)) continue;
+            imageSizeUpdateInFlight.current.add(el.id);
+
+            (async () => {
+                try {
+                    const size = await getImageNaturalSize(el.href);
+                    if (!size) return;
+                    const { w, h } = clampToMaxDim(size.w, size.h);
+                    setElements(prev => prev.map(one =>
+                        one.id === el.id && one.type === 'image'
+                            ? { ...one, width: w, height: h, sizeStatus: 'resolved' }
+                            : one
+                    ), false);
+                } catch {
+                    // ignore
+                } finally {
+                    imageSizeUpdateInFlight.current.delete(el.id);
+                }
+            })();
+        }
+    }, [elements, imageSize, isInitializing]);
     
     const commitAction = useCallback((updater: (prev: Element[]) => Element[]) => {
         updateActiveBoard(board => {
@@ -787,6 +864,7 @@ const App: React.FC = () => {
                     height: img.height,
                     href: dataUrl,
                     mimeType: mimeType,
+                    sizeStatus: 'resolved',
                 };
                 setElements(prev => [...prev, newImage]);
                 setSelectedElementIds([newImage.id]);
@@ -1428,7 +1506,8 @@ const App: React.FC = () => {
                         x: cropBox.x,
                         y: cropBox.y,
                         width: cropBox.width,
-                        height: cropBox.height
+                        height: cropBox.height,
+                        sizeStatus: 'resolved',
                     };
                     return updatedEl;
                 }
@@ -1645,7 +1724,7 @@ const App: React.FC = () => {
                         if (!size) return;
                         const { w, h } = clampToMaxDim(size.w, size.h);
                         setElements(prev => prev.map(el =>
-                            el.id === elementId && el.type === 'image' ? { ...el, width: w, height: h } : el
+                            el.id === elementId && el.type === 'image' ? { ...el, width: w, height: h, sizeStatus: 'resolved' } : el
                         ), false);
                     } catch {
                         // ignore
@@ -1660,7 +1739,7 @@ const App: React.FC = () => {
                         if (!size) return;
                         const { w, h } = clampToMaxDim(size.w, size.h);
                         setElements(prev => prev.map(el =>
-                            el.type === 'image' && el.href === href ? { ...el, width: w, height: h } : el
+                            el.type === 'image' && el.href === href ? { ...el, width: w, height: h, sizeStatus: 'resolved' } : el
                         ), false);
                     } catch {
                         // ignore
@@ -1703,7 +1782,7 @@ const App: React.FC = () => {
                                 commitAction(prev =>
                                     prev.map(el => {
                                         if (el.id === baseImage.id && el.type === 'image') {
-                                            return { ...el, href: mediaUrl, mimeType };
+                                            return { ...el, href: mediaUrl, mimeType, sizeStatus: 'placeholder' };
                                         }
                                         return el;
                                     }).filter(el => !maskPathIds.has(el.id))
@@ -1720,6 +1799,7 @@ const App: React.FC = () => {
                                 x: cursorX, y: baseImage.y,
                                 width: w, height: h,
                                 href: mediaUrl, mimeType,
+                                sizeStatus: 'placeholder',
                             };
                             commitAction(prev => [...prev, newImage]);
                             cursorX += w + 20;
@@ -1782,6 +1862,7 @@ const App: React.FC = () => {
                                         ...el,
                                         href: first.mediaUrl,
                                         mimeType: first.mimeType,
+                                        sizeStatus: 'placeholder',
                                     };
                                 }
                                 return el;
@@ -1805,6 +1886,7 @@ const App: React.FC = () => {
                                 height: h,
                                 href: it.mediaUrl,
                                 mimeType: it.mimeType,
+                                sizeStatus: 'placeholder',
                             } as ImageElement];
                             cursorX += w + 20;
                         }
@@ -1853,6 +1935,7 @@ const App: React.FC = () => {
                             id, type: 'image', x: cursorX, y, name: 'Generated Image',
                             width: w, height: h,
                             href: mediaUrl, mimeType,
+                            sizeStatus: 'placeholder',
                         };
                         commitAction(prev => [...prev, newImage]);
                         cursorX += w + 20;
@@ -1940,6 +2023,7 @@ const App: React.FC = () => {
                         id, type: 'image', x: cursorX, y, name: 'Generated Image',
                         width: w, height: h,
                         href: it.mediaUrl, mimeType: it.mimeType,
+                        sizeStatus: 'placeholder',
                     };
                     commitAction(prev => [...prev, newImage]);
                     cursorX += w + 20;
@@ -1982,6 +2066,7 @@ const App: React.FC = () => {
                         id, type: 'image', x, y, name: 'Generated Image',
                         width: w, height: h,
                         href: mediaUrl, mimeType,
+                        sizeStatus: 'placeholder',
                     };
                     commitAction(prev => [...prev, newImage]);
                     scheduleImageSizeUpdateById(id, mediaUrl);
@@ -2053,6 +2138,7 @@ const App: React.FC = () => {
                     id, type: 'image', x, y, name: 'Generated Image',
                     width: w, height: h,
                     href: it.mediaUrl, mimeType: it.mimeType,
+                    sizeStatus: 'placeholder',
                 };
                 commitAction(prev => [...prev, newImage]);
                 scheduleImageSizeUpdateById(id, it.mediaUrl);
@@ -2145,6 +2231,7 @@ const App: React.FC = () => {
                 id: generateId(), type: 'image', x, y, name: 'History Image',
                 width: img.width, height: img.height,
                 href, mimeType: item.mime_type || 'image/png',
+                sizeStatus: 'resolved',
             };
             commitAction(prev => [...prev, newImage]);
             setSelectedElementIds([newImage.id]);
@@ -2226,7 +2313,8 @@ const App: React.FC = () => {
                 width,
                 height,
                 href,
-                mimeType
+                mimeType,
+                sizeStatus: 'resolved',
             };
 
             const idsToRemove = new Set(elementsToRasterize.map(el => el.id));
