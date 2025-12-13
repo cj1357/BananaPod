@@ -59,30 +59,26 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     const allowed = await isAllowedUserKey(env.USERS_KV, userKey);
     if (!allowed) return errorJson(401, "Invalid userKey");
 
-    const { setCookieHeader } = await createSession(env.USERS_KV, userKey);
-    return json(
-      { ok: true },
-      {
-        status: 200,
-        headers: {
-          "Set-Cookie": setCookieHeader,
-        },
-      }
-    );
+    const { setCookieHeader, clearLegacyJwtCookieHeader } = await createSession(env.DB, userKey);
+    const headers = new Headers();
+    // IMPORTANT: Set-Cookie headers must NOT be comma-joined.
+    headers.append("Set-Cookie", setCookieHeader);
+    headers.append("Set-Cookie", clearLegacyJwtCookieHeader);
+    return json({ ok: true }, { status: 200, headers });
   }
 
   // everything below requires session auth
-  const auth = await requireAuth(request, env.USERS_KV);
+  const auth = await requireAuth(request, env.USERS_KV, env.DB);
   if (!auth) return errorJson(401, "Unauthorized");
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
-    const setCookieHeader = await destroySession(env.USERS_KV, auth.sessionId);
+    const { clearSessionCookieHeader } = await destroySession(env.DB, auth.sessionId);
     return json(
       { ok: true },
       {
         status: 200,
         headers: {
-          "Set-Cookie": setCookieHeader,
+          "Set-Cookie": clearSessionCookieHeader,
         },
       }
     );
