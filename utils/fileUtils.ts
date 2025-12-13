@@ -29,8 +29,8 @@ export const blobToDataUrl = (blob: Blob): Promise<string> => {
     });
 };
 
-// Load image with timeout (default 30 seconds)
-export const loadImageWithTimeout = (src: string, timeout: number = 30000): Promise<HTMLImageElement> => {
+// Load image with timeout (default 90 seconds)
+export const loadImageWithTimeout = (src: string, timeout: number = 90000): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
