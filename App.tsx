@@ -1782,8 +1782,6 @@ const App: React.FC = () => {
                                         ...el,
                                         href: first.mediaUrl,
                                         mimeType: first.mimeType,
-                                        width: img.width,
-                                        height: img.height,
                                     };
                                 }
                                 return el;
@@ -1848,37 +1846,65 @@ const App: React.FC = () => {
                     let placeChain = Promise.resolve();
 
                     const placeOne = async (mediaUrl: string, mimeType: string) => {
-                        const loaded = await loadImageWithTimeout(mediaUrl);
                         const id = generateId();
                         newIds.push(id);
+                        const { w, h } = getPlaceholderSize();
                         const newImage: ImageElement = {
                             id, type: 'image', x: cursorX, y, name: 'Generated Image',
-                            width: loaded.width, height: loaded.height,
+                            width: w, height: h,
                             href: mediaUrl, mimeType,
                         };
                         commitAction(prev => [...prev, newImage]);
-                        cursorX += loaded.width + 20;
+                        cursorX += w + 20;
+                        scheduleImageSizeUpdateById(id, mediaUrl);
                     };
 
                     const tasks = Array.from({ length: imageCount }, async () => {
-                        const one = await editImage(prompt, refs, undefined, imageConfig, 1);
-                        if (!one.ok || one.items.length === 0) {
-                            lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
-                            return;
+                        try {
+                            const one = await editImage(prompt, refs, undefined, imageConfig, 1);
+                            if (!one.ok || one.items.length === 0) {
+                                lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                                return;
+                            }
+                            const it = one.items[0];
+                            produced += 1;
+                            setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => {});
+                        } catch (e) {
+                            lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                         }
-                        const it = one.items[0];
-                        produced += 1;
-                        setProgressMessage(`Generating... ${produced}/${imageCount}`);
-                        placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
                     });
 
                     await Promise.allSettled(tasks);
+
+                    // If some requests failed (common online due to rate limits), try to fill remaining slots sequentially.
+                    const missing = imageCount - produced;
+                    for (let i = 0; i < missing; i++) {
+                        try {
+                            setProgressMessage(`Retry... ${produced + 1}/${imageCount}`);
+                            const one = await editImage(prompt, refs, undefined, imageConfig, 1);
+                            if (!one.ok || one.items.length === 0) {
+                                lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                                continue;
+                            }
+                            const it = one.items[0];
+                            produced += 1;
+                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => {});
+                        } catch (e) {
+                            lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                        }
+                    }
+
                     await placeChain;
 
                     if (produced === 0) {
                         setError(lastTextResponse || 'Generation failed to produce an image.');
                         setIsLoading(false);
                         return;
+                    }
+
+                    if (produced < imageCount) {
+                        setError(`Only generated ${produced}/${imageCount}. ${lastTextResponse || ''}`.trim());
                     }
 
                     setSelectedElementIds(newIds);
