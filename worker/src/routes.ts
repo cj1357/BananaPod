@@ -338,13 +338,42 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     if (!id) return errorJson(400, "Missing id");
     const row = await getHistoryById(env.DB, id);
     if (!row || row.user_key !== auth.userKey) return errorJson(404, "Not found");
+    // 若是 Range 请求（视频常见），先不做缓存以免缓存碎片；后续如需可扩展按 Range 处理。
+    const rangeHeader = request.headers.get("Range");
+
+    // IMPORTANT: 缓存必须在鉴权通过且确认 media 属于当前用户后才可用，避免跨用户泄漏。
+    // 这里用“无 Cookie 的 URL 请求”作为 cache key，确保同一资源可被边缘复用。
+    const cacheKey = new Request(url.toString(), { method: "GET" });
+    const cache = caches.default;
+
+    if (!rangeHeader) {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    }
+
     const obj = await env.MEDIA_BUCKET.get(row.r2_key);
     if (!obj) return errorJson(404, "Not found");
+
+    const etag = (obj as unknown as { etag?: string }).etag;
+    const ifNoneMatch = request.headers.get("If-None-Match");
+
     const headers = new Headers();
     headers.set("Content-Type", row.mime_type);
-    // cache per-session; keep small (private)
-    headers.set("Cache-Control", "private, max-age=3600");
-    return new Response(obj.body, { status: 200, headers });
+    headers.set("Accept-Ranges", "bytes");
+    // mediaId 基本不可变：允许边缘缓存，显著降低中国访问时的回源与跨地域读取开销
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    if (etag) headers.set("ETag", etag);
+
+    if (etag && ifNoneMatch && ifNoneMatch === etag) {
+      return new Response(null, { status: 304, headers });
+    }
+
+    const res = new Response(obj.body, { status: 200, headers });
+    if (!rangeHeader) {
+      // clone() 以便同时返回给客户端并写入边缘缓存
+      await cache.put(cacheKey, res.clone());
+    }
+    return res;
   }
 
   return errorJson(404, "Not Found");
