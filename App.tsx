@@ -1596,8 +1596,8 @@ const App: React.FC = () => {
 
         // IMAGE GENERATION LOGIC
         try {
-            const PLACEHOLDER_LONG_SIDE = 1024;
-            const MAX_DIM = 1024;
+            const PLACEHOLDER_LONG_SIDE = imageSize === '4K' ? 4096 : imageSize === '2K' ? 2048 : 1024;
+            const MAX_DIM = PLACEHOLDER_LONG_SIDE;
 
             const getPlaceholderSize = (): { w: number; h: number } => {
                 const ratioStr = imageAspectRatio === 'auto' ? '1:1' : imageAspectRatio;
