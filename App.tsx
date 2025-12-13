@@ -1609,17 +1609,41 @@ const App: React.FC = () => {
                 return { w: Math.round(PLACEHOLDER_LONG_SIDE * ratio), h: PLACEHOLDER_LONG_SIDE };
             };
 
+            const clampToMaxDim = (w: number, h: number): { w: number; h: number } => {
+                if (!(w > 0 && h > 0)) return { w, h };
+                if (w <= MAX_DIM && h <= MAX_DIM) return { w, h };
+                const ratio = w / h;
+                if (ratio > 1) return { w: MAX_DIM, h: Math.round(MAX_DIM / ratio) };
+                return { w: Math.round(MAX_DIM * ratio), h: MAX_DIM };
+            };
+
+            const getImageNaturalSize = async (href: string): Promise<{ w: number; h: number } | null> => {
+                // 1) Try HTMLImageElement first
+                try {
+                    const img = await loadImageWithTimeout(href);
+                    const w = (img as any).naturalWidth || img.width;
+                    const h = (img as any).naturalHeight || img.height;
+                    if (w > 0 && h > 0) return { w, h };
+                } catch { /* ignore */ }
+
+                // 2) Fallback: fetch + createImageBitmap (more robust with cookies)
+                try {
+                    const res = await fetch(href, { credentials: 'include' });
+                    if (!res.ok) return null;
+                    const blob = await res.blob();
+                    const bmp = await createImageBitmap(blob);
+                    if (bmp.width > 0 && bmp.height > 0) return { w: bmp.width, h: bmp.height };
+                } catch { /* ignore */ }
+
+                return null;
+            };
+
             const scheduleImageSizeUpdateById = (elementId: string, href: string) => {
                 (async () => {
                     try {
-                        const img = await loadImageWithTimeout(href);
-                        let w = img.width;
-                        let h = img.height;
-                        if (w > MAX_DIM || h > MAX_DIM) {
-                            const ratio = w / h;
-                            if (ratio > 1) { w = MAX_DIM; h = Math.round(MAX_DIM / ratio); }
-                            else { h = MAX_DIM; w = Math.round(MAX_DIM * ratio); }
-                        }
+                        const size = await getImageNaturalSize(href);
+                        if (!size) return;
+                        const { w, h } = clampToMaxDim(size.w, size.h);
                         setElements(prev => prev.map(el =>
                             el.id === elementId && el.type === 'image' ? { ...el, width: w, height: h } : el
                         ), false);
@@ -1632,14 +1656,9 @@ const App: React.FC = () => {
             const scheduleImageSizeUpdateByHref = (href: string) => {
                 (async () => {
                     try {
-                        const img = await loadImageWithTimeout(href);
-                        let w = img.width;
-                        let h = img.height;
-                        if (w > MAX_DIM || h > MAX_DIM) {
-                            const ratio = w / h;
-                            if (ratio > 1) { w = MAX_DIM; h = Math.round(MAX_DIM / ratio); }
-                            else { h = MAX_DIM; w = Math.round(MAX_DIM * ratio); }
-                        }
+                        const size = await getImageNaturalSize(href);
+                        if (!size) return;
+                        const { w, h } = clampToMaxDim(size.w, size.h);
                         setElements(prev => prev.map(el =>
                             el.type === 'image' && el.href === href ? { ...el, width: w, height: h } : el
                         ), false);
