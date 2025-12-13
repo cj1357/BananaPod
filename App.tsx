@@ -421,6 +421,7 @@ const App: React.FC = () => {
     const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
     const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio | 'auto'>('auto');
     const [imageSize, setImageSize] = useState<ImageSize>('1K');
+    const [imageCount, setImageCount] = useState<number>(1);
     const [progressMessage, setProgressMessage] = useState<string>('');
     
     // API Configuration
@@ -487,6 +488,7 @@ const App: React.FC = () => {
                     if (savedSettings.videoAspectRatio) setVideoAspectRatio(savedSettings.videoAspectRatio);
                     if (savedSettings.imageAspectRatio) setImageAspectRatio(savedSettings.imageAspectRatio);
                     if (savedSettings.imageSize) setImageSize(savedSettings.imageSize);
+                    if (typeof (savedSettings as any).imageCount === 'number') setImageCount((savedSettings as any).imageCount);
                 }
             } catch (err) {
                 console.error('Failed to load data from IndexedDB:', err);
@@ -541,6 +543,7 @@ const App: React.FC = () => {
                 videoAspectRatio,
                 imageAspectRatio,
                 imageSize,
+                imageCount,
             };
             debouncedSaveSettings(settings);
         }
@@ -557,6 +560,7 @@ const App: React.FC = () => {
         videoAspectRatio,
         imageAspectRatio,
         imageSize,
+        imageCount,
     ]);
 
     const handleAddUserEffect = useCallback((effect: UserEffect) => {
@@ -1607,12 +1611,80 @@ const App: React.FC = () => {
                 if (imageElements.length === 1 && maskPaths.length > 0 && selectedElements.length === (1 + maskPaths.length)) {
                     const baseImage = imageElements[0];
                     const maskData = await rasterizeMask(maskPaths, baseImage);
+                    const maskRef: ClientImageRef = { kind: 'dataUrl', dataUrl: maskData.href, mimeType: maskData.mimeType };
+
+                    // Multi-image: fire N concurrent requests (count=1 each) and render as each finishes.
+                    if (imageCount > 1) {
+                        const maskPathIds = new Set(maskPaths.map(p => p.id));
+                        let cursorX = baseImage.x;
+                        const createdIds: string[] = [];
+                        let replaced = false;
+                        let produced = 0;
+                        let lastTextResponse: string | null = null;
+                        let placeChain = Promise.resolve();
+
+                        const placeOne = async (mediaUrl: string, mimeType: string) => {
+                            const loaded = await loadImageWithTimeout(mediaUrl);
+
+                            if (!replaced) {
+                                replaced = true;
+                                cursorX = baseImage.x + loaded.width + 20;
+                                // Replace base image + remove masks
+                                commitAction(prev =>
+                                    prev.map(el => {
+                                        if (el.id === baseImage.id && el.type === 'image') {
+                                            return { ...el, href: mediaUrl, mimeType, width: loaded.width, height: loaded.height };
+                                        }
+                                        return el;
+                                    }).filter(el => !maskPathIds.has(el.id))
+                                );
+                                return;
+                            }
+
+                            const id = generateId();
+                            createdIds.push(id);
+                            const newImage: ImageElement = {
+                                id, type: 'image', name: 'Generated Image',
+                                x: cursorX, y: baseImage.y,
+                                width: loaded.width, height: loaded.height,
+                                href: mediaUrl, mimeType,
+                            };
+                            commitAction(prev => [...prev, newImage]);
+                            cursorX += loaded.width + 20;
+                        };
+
+                        const tasks = Array.from({ length: imageCount }, async () => {
+                            const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
+                            if (!one.ok || one.items.length === 0) {
+                                lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                                return;
+                            }
+                            const it = one.items[0];
+                            produced += 1;
+                            setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
+                        });
+
+                        await Promise.allSettled(tasks);
+                        await placeChain;
+
+                        if (produced === 0) {
+                            setError(lastTextResponse || 'Inpainting failed to produce an image.');
+                            setIsLoading(false);
+                            return;
+                        }
+
+                        setSelectedElementIds([baseImage.id, ...createdIds]);
+                        setIsLoading(false);
+                        return;
+                    }
 
                     const result = await editImage(
                         prompt,
                         [imageElementToRef(baseImage)],
-                        { kind: 'dataUrl', dataUrl: maskData.href, mimeType: maskData.mimeType },
-                        imageConfig
+                        maskRef,
+                        imageConfig,
+                        imageCount
                     );
 
                     if (!result.ok) {
@@ -1621,24 +1693,70 @@ const App: React.FC = () => {
                         return;
                     }
 
-                    const img = await loadImageWithTimeout(result.mediaUrl);
+                    const first = result.items[0];
+                    const img = await loadImageWithTimeout(first.mediaUrl);
                     const maskPathIds = new Set(maskPaths.map(p => p.id));
 
-                    commitAction(prev =>
-                        prev.map(el => {
-                            if (el.id === baseImage.id && el.type === 'image') {
-                                return {
-                                    ...el,
-                                    href: result.mediaUrl,
-                                    mimeType: result.mimeType,
-                                    width: img.width,
-                                    height: img.height,
-                                };
-                            }
-                            return el;
-                        }).filter(el => !maskPathIds.has(el.id))
-                    );
-                    setSelectedElementIds([baseImage.id]);
+                    // Replace base image with the first result; remove mask paths.
+                    // If more than one image requested, place extra results to the right.
+                    const extraItems = result.items.slice(1);
+                    const createdIds: string[] = [];
+
+                    commitAction(prev => {
+                        let updated = prev
+                            .map(el => {
+                                if (el.id === baseImage.id && el.type === 'image') {
+                                    return {
+                                        ...el,
+                                        href: first.mediaUrl,
+                                        mimeType: first.mimeType,
+                                        width: img.width,
+                                        height: img.height,
+                                    };
+                                }
+                                return el;
+                            })
+                            .filter(el => !maskPathIds.has(el.id));
+
+                        // Add extra images (if any)
+                        let cursorX = (baseImage.x + img.width) + 20;
+                        const y = baseImage.y;
+                        for (const it of extraItems) {
+                            const id = generateId();
+                            createdIds.push(id);
+                            // Width/height will be loaded per image below (but we need something now)
+                            // We'll set a temporary size and then patch after load.
+                            updated = [...updated, {
+                                id,
+                                type: 'image',
+                                name: 'Generated Image',
+                                x: cursorX,
+                                y,
+                                width: img.width,
+                                height: img.height,
+                                href: it.mediaUrl,
+                                mimeType: it.mimeType,
+                            } as ImageElement];
+                            cursorX += img.width + 20;
+                        }
+                        return updated;
+                    });
+
+                    // Update sizes for extra images once loaded (best-effort)
+                    if (extraItems.length > 0) {
+                        for (const it of extraItems) {
+                            try {
+                                const loaded = await loadImageWithTimeout(it.mediaUrl);
+                                setElements(prev => prev.map(el => (
+                                    el.type === 'image' && el.href === it.mediaUrl
+                                        ? { ...el, width: loaded.width, height: loaded.height }
+                                        : el
+                                )), false);
+                            } catch { /* ignore */ }
+                        }
+                    }
+
+                    setSelectedElementIds([baseImage.id, ...createdIds]);
                     setIsLoading(false);
                     return;
                 }
@@ -1652,14 +1770,68 @@ const App: React.FC = () => {
                 });
                 const refs = await Promise.all(refPromises);
 
-                const result = await editImage(prompt, refs, undefined, imageConfig);
+                // Multi-image: fire N concurrent requests (count=1 each) and render as each finishes.
+                if (imageCount > 1) {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity;
+                    selectedElements.forEach(el => {
+                        const bounds = getElementBounds(el);
+                        minX = Math.min(minX, bounds.x);
+                        minY = Math.min(minY, bounds.y);
+                        maxX = Math.max(maxX, bounds.x + bounds.width);
+                    });
+
+                    const y = minY;
+                    let cursorX = maxX + 20;
+                    const newIds: string[] = [];
+                    let produced = 0;
+                    let lastTextResponse: string | null = null;
+                    let placeChain = Promise.resolve();
+
+                    const placeOne = async (mediaUrl: string, mimeType: string) => {
+                        const loaded = await loadImageWithTimeout(mediaUrl);
+                        const id = generateId();
+                        newIds.push(id);
+                        const newImage: ImageElement = {
+                            id, type: 'image', x: cursorX, y, name: 'Generated Image',
+                            width: loaded.width, height: loaded.height,
+                            href: mediaUrl, mimeType,
+                        };
+                        commitAction(prev => [...prev, newImage]);
+                        cursorX += loaded.width + 20;
+                    };
+
+                    const tasks = Array.from({ length: imageCount }, async () => {
+                        const one = await editImage(prompt, refs, undefined, imageConfig, 1);
+                        if (!one.ok || one.items.length === 0) {
+                            lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                            return;
+                        }
+                        const it = one.items[0];
+                        produced += 1;
+                        setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                        placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
+                    });
+
+                    await Promise.allSettled(tasks);
+                    await placeChain;
+
+                    if (produced === 0) {
+                        setError(lastTextResponse || 'Generation failed to produce an image.');
+                        setIsLoading(false);
+                        return;
+                    }
+
+                    setSelectedElementIds(newIds);
+                    setIsLoading(false);
+                    return;
+                }
+
+                const result = await editImage(prompt, refs, undefined, imageConfig, imageCount);
                 if (!result.ok) {
                     setError(result.textResponse || 'Generation failed to produce an image.');
                     setIsLoading(false);
                     return;
                 }
-
-                const img = await loadImageWithTimeout(result.mediaUrl);
                 let minX = Infinity, minY = Infinity, maxX = -Infinity;
                 selectedElements.forEach(el => {
                     const bounds = getElementBounds(el);
@@ -1667,29 +1839,106 @@ const App: React.FC = () => {
                     minY = Math.min(minY, bounds.y);
                     maxX = Math.max(maxX, bounds.x + bounds.width);
                 });
-                const x = maxX + 20;
-                const y = minY;
 
-                const newImage: ImageElement = {
-                    id: generateId(), type: 'image', x, y, name: 'Generated Image',
-                    width: img.width, height: img.height,
-                    href: result.mediaUrl, mimeType: result.mimeType,
-                };
-                commitAction(prev => [...prev, newImage]);
-                setSelectedElementIds([newImage.id]);
+                const startX = maxX + 20;
+                const y = minY;
+                let cursorX = startX;
+                const newIds: string[] = [];
+
+                // Sequentially load each generated image to get accurate dimensions and place them side-by-side.
+                for (const it of result.items) {
+                    const loaded = await loadImageWithTimeout(it.mediaUrl);
+                    const id = generateId();
+                    newIds.push(id);
+                    const newImage: ImageElement = {
+                        id, type: 'image', x: cursorX, y, name: 'Generated Image',
+                        width: loaded.width, height: loaded.height,
+                        href: it.mediaUrl, mimeType: it.mimeType,
+                    };
+                    commitAction(prev => [...prev, newImage]);
+                    cursorX += loaded.width + 20;
+                }
+
+                setSelectedElementIds(newIds);
                 setIsLoading(false);
                 return;
             }
 
             // Generate from scratch
-            const result = await generateImageFromText(prompt, imageConfig);
+            if (imageCount > 1) {
+                if (!svgRef.current) {
+                    setIsLoading(false);
+                    return;
+                }
+
+                const svgBounds = svgRef.current.getBoundingClientRect();
+                const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 };
+                const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y);
+
+                const newIds: string[] = [];
+                let cursorX = canvasPoint.x;
+                let baseY = canvasPoint.y;
+                let isFirst = true;
+                let produced = 0;
+                let lastTextResponse: string | null = null;
+                let placeChain = Promise.resolve();
+
+                const placeOne = async (mediaUrl: string, mimeType: string) => {
+                    const loaded = await loadImageWithTimeout(mediaUrl);
+                    const id = generateId();
+                    newIds.push(id);
+
+                    const x = isFirst ? (canvasPoint.x - loaded.width / 2) : cursorX;
+                    const y = isFirst ? (canvasPoint.y - loaded.height / 2) : baseY;
+
+                    const newImage: ImageElement = {
+                        id, type: 'image', x, y, name: 'Generated Image',
+                        width: loaded.width, height: loaded.height,
+                        href: mediaUrl, mimeType,
+                    };
+                    commitAction(prev => [...prev, newImage]);
+
+                    if (isFirst) {
+                        cursorX = x + loaded.width + 20;
+                        baseY = y;
+                        isFirst = false;
+                    } else {
+                        cursorX += loaded.width + 20;
+                    }
+                };
+
+                const tasks = Array.from({ length: imageCount }, async () => {
+                    const one = await generateImageFromText(prompt, imageConfig, 1);
+                    if (!one.ok || one.items.length === 0) {
+                        lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                        return;
+                    }
+                    const it = one.items[0];
+                    produced += 1;
+                    setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                    placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
+                });
+
+                await Promise.allSettled(tasks);
+                await placeChain;
+
+                if (produced === 0) {
+                    setError(lastTextResponse || 'Generation failed to produce an image.');
+                    setIsLoading(false);
+                    return;
+                }
+
+                setSelectedElementIds(newIds);
+                setIsLoading(false);
+                return;
+            }
+
+            const result = await generateImageFromText(prompt, imageConfig, imageCount);
             if (!result.ok) {
                 setError(result.textResponse || 'Generation failed to produce an image.');
                 setIsLoading(false);
                 return;
             }
-
-            const img = await loadImageWithTimeout(result.mediaUrl);
             if (!svgRef.current) {
                 setIsLoading(false);
                 return;
@@ -1697,16 +1946,38 @@ const App: React.FC = () => {
             const svgBounds = svgRef.current.getBoundingClientRect();
             const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 };
             const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y);
-            const x = canvasPoint.x - (img.width / 2);
-            const y = canvasPoint.y - (img.height / 2);
 
-            const newImage: ImageElement = {
-                id: generateId(), type: 'image', x, y, name: 'Generated Image',
-                width: img.width, height: img.height,
-                href: result.mediaUrl, mimeType: result.mimeType,
-            };
-            commitAction(prev => [...prev, newImage]);
-            setSelectedElementIds([newImage.id]);
+            // Place first image centered; others to the right.
+            const newIds: string[] = [];
+            let cursorX = canvasPoint.x;
+            let baseY = canvasPoint.y;
+            let isFirst = true;
+
+            for (const it of result.items) {
+                const loaded = await loadImageWithTimeout(it.mediaUrl);
+                const id = generateId();
+                newIds.push(id);
+
+                const x = isFirst ? (canvasPoint.x - loaded.width / 2) : cursorX;
+                const y = isFirst ? (canvasPoint.y - loaded.height / 2) : baseY;
+
+                const newImage: ImageElement = {
+                    id, type: 'image', x, y, name: 'Generated Image',
+                    width: loaded.width, height: loaded.height,
+                    href: it.mediaUrl, mimeType: it.mimeType,
+                };
+                commitAction(prev => [...prev, newImage]);
+
+                if (isFirst) {
+                    cursorX = x + loaded.width + 20;
+                    baseY = y;
+                    isFirst = false;
+                } else {
+                    cursorX += loaded.width + 20;
+                }
+            }
+
+            setSelectedElementIds(newIds);
             setIsLoading(false);
         } catch (err) {
             const error = err as Error;
@@ -2675,6 +2946,8 @@ const App: React.FC = () => {
                 setImageAspectRatio={setImageAspectRatio}
                 imageSize={imageSize}
                 setImageSize={setImageSize}
+                imageCount={imageCount}
+                setImageCount={setImageCount}
             />}
         </div>
     );

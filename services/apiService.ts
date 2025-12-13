@@ -11,8 +11,10 @@ export type ClientImageRef =
   | { kind: "dataUrl"; dataUrl: string; mimeType: string }
   | { kind: "mediaId"; mediaId: string };
 
+export type GenerateImageItem = { mediaId: string; mediaUrl: string; mimeType: string; textResponse: string | null };
+
 export type GenerateImageResult =
-  | { ok: true; mediaId: string; mediaUrl: string; mimeType: string; textResponse: string | null }
+  | { ok: true; items: GenerateImageItem[] }
   | { ok: false; textResponse: string | null };
 
 export async function authCheck(userKey: string): Promise<void> {
@@ -29,26 +31,133 @@ export async function authLogout(): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
-export async function generateImageFromText(prompt: string, imageConfig?: ImageConfig): Promise<GenerateImageResult> {
+export async function generateImageFromText(prompt: string, imageConfig?: ImageConfig, count: number = 1): Promise<GenerateImageResult> {
   const res = await fetch("/api/generate/image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "generate", prompt, imageConfig }),
+    body: JSON.stringify({ action: "generate", prompt, imageConfig, count }),
   });
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as GenerateImageResult;
+}
+
+type SSEEvent =
+  | { event: "start"; data: { ok: boolean; requested: number } }
+  | { event: "item"; data: GenerateImageItem & { index?: number } }
+  | { event: "skip"; data: { index: number; textResponse: string | null } }
+  | { event: "done"; data: { ok: boolean; produced: number; textResponse: string | null } }
+  | { event: "error"; data: { message: string } };
+
+async function consumeSSE(res: Response, onEvent: (evt: SSEEvent) => void): Promise<void> {
+  if (!res.body) throw new Error("No response body");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const flush = () => {
+    // events are separated by blank line
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const raw of parts) {
+      const lines = raw.split("\n");
+      let eventName = "message";
+      const dataLines: string[] = [];
+      for (const line of lines) {
+        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      const dataStr = dataLines.join("\n");
+      if (!dataStr) continue;
+      const data = JSON.parse(dataStr);
+      onEvent({ event: eventName as any, data } as SSEEvent);
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    flush();
+  }
+  buffer += decoder.decode();
+  flush();
+}
+
+export async function generateImageFromTextStream(
+  prompt: string,
+  imageConfig: ImageConfig | undefined,
+  count: number,
+  onItem: (item: GenerateImageItem) => void,
+  onProgress?: (produced: number, requested: number) => void
+): Promise<{ produced: number; textResponse: string | null }> {
+  const res = await fetch("/api/generate/image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ action: "generate", prompt, imageConfig, count, stream: true }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  let produced = 0;
+  let requested = count;
+  let lastText: string | null = null;
+
+  await consumeSSE(res, (evt) => {
+    if (evt.event === "start") requested = evt.data.requested;
+    if (evt.event === "item") {
+      produced += 1;
+      onProgress?.(produced, requested);
+      onItem(evt.data);
+    }
+    if (evt.event === "done") lastText = evt.data.textResponse;
+    if (evt.event === "error") throw new Error(evt.data.message);
+  });
+
+  return { produced, textResponse: lastText };
+}
+
+export async function editImageStream(
+  prompt: string,
+  images: ClientImageRef[],
+  mask: ClientImageRef | undefined,
+  imageConfig: ImageConfig | undefined,
+  count: number,
+  onItem: (item: GenerateImageItem) => void,
+  onProgress?: (produced: number, requested: number) => void
+): Promise<{ produced: number; textResponse: string | null }> {
+  const res = await fetch("/api/generate/image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ action: "edit", prompt, images, mask, imageConfig, count, stream: true }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  let produced = 0;
+  let requested = count;
+  let lastText: string | null = null;
+
+  await consumeSSE(res, (evt) => {
+    if (evt.event === "start") requested = evt.data.requested;
+    if (evt.event === "item") {
+      produced += 1;
+      onProgress?.(produced, requested);
+      onItem(evt.data);
+    }
+    if (evt.event === "done") lastText = evt.data.textResponse;
+    if (evt.event === "error") throw new Error(evt.data.message);
+  });
+
+  return { produced, textResponse: lastText };
 }
 
 export async function editImage(
   prompt: string,
   images: ClientImageRef[],
   mask?: ClientImageRef,
-  imageConfig?: ImageConfig
+  imageConfig?: ImageConfig,
+  count: number = 1
 ): Promise<GenerateImageResult> {
   const res = await fetch("/api/generate/image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "edit", prompt, images, mask, imageConfig }),
+    body: JSON.stringify({ action: "edit", prompt, images, mask, imageConfig, count }),
   });
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as GenerateImageResult;

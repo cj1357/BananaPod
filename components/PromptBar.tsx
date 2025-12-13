@@ -21,6 +21,8 @@ interface PromptBarProps {
     setImageAspectRatio: (ratio: ImageAspectRatio | 'auto') => void;
     imageSize: ImageSize;
     setImageSize: (size: ImageSize) => void;
+    imageCount: number;
+    setImageCount: (count: number) => void;
 }
 
 export const PromptBar: React.FC<PromptBarProps> = ({
@@ -42,6 +44,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     setImageAspectRatio,
     imageSize,
     setImageSize,
+    imageCount,
+    setImageCount,
 }) => {
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -132,6 +136,18 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                             <option value="1K">1K</option>
                             <option value="2K">2K</option>
                             <option value="4K">4K</option>
+                        </select>
+                        <select
+                            value={imageCount}
+                            onChange={(e) => setImageCount(parseInt(e.target.value, 10))}
+                            className="bg-black/20 text-white text-sm rounded-full px-2 py-1.5 border-none outline-none cursor-pointer hover:bg-black/30"
+                            title="生成数量"
+                        >
+                            <option value={1}>1</option>
+                            <option value={2}>2</option>
+                            <option value={3}>3</option>
+                            <option value={4}>4</option>
+                            <option value={5}>5</option>
                         </select>
                     </div>
                 )}
