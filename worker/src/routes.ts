@@ -90,6 +90,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     const body = parseJsonSafe<{
       action?: "generate" | "edit";
       prompt?: string;
+      imageModel?: string;
       count?: number;
       stream?: boolean;
       imageConfig?: ImageConfig;
@@ -138,19 +139,21 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
               const result =
                 action === "edit"
                   ? await geminiEditImage({
-                      apiKey: env.GEMINI_API_KEY,
-                      baseUrl: env.BASE_URL,
-                      prompt,
-                      images: base64Images!,
-                      mask,
-                      imageConfig: body?.imageConfig,
-                    })
+                    apiKey: env.GEMINI_API_KEY,
+                    baseUrl: env.BASE_URL,
+                    prompt,
+                    imageModel: body?.imageModel,
+                    images: base64Images!,
+                    mask,
+                    imageConfig: body?.imageConfig,
+                  })
                   : await geminiGenerateImageFromText({
-                      apiKey: env.GEMINI_API_KEY,
-                      baseUrl: env.BASE_URL,
-                      prompt,
-                      imageConfig: body?.imageConfig,
-                    });
+                    apiKey: env.GEMINI_API_KEY,
+                    baseUrl: env.BASE_URL,
+                    prompt,
+                    imageModel: body?.imageModel,
+                    imageConfig: body?.imageConfig,
+                  });
 
               lastTextResponse = result.textResponse ?? lastTextResponse;
 
@@ -200,19 +203,21 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
       const result =
         action === "edit"
           ? await geminiEditImage({
-              apiKey: env.GEMINI_API_KEY,
-              baseUrl: env.BASE_URL,
-              prompt,
-              images: base64Images!,
-              mask,
-              imageConfig: body?.imageConfig,
-            })
+            apiKey: env.GEMINI_API_KEY,
+            baseUrl: env.BASE_URL,
+            prompt,
+            imageModel: body?.imageModel,
+            images: base64Images!,
+            mask,
+            imageConfig: body?.imageConfig,
+          })
           : await geminiGenerateImageFromText({
-              apiKey: env.GEMINI_API_KEY,
-              baseUrl: env.BASE_URL,
-              prompt,
-              imageConfig: body?.imageConfig,
-            });
+            apiKey: env.GEMINI_API_KEY,
+            baseUrl: env.BASE_URL,
+            prompt,
+            imageModel: body?.imageModel,
+            imageConfig: body?.imageConfig,
+          });
 
       lastTextResponse = result.textResponse ?? lastTextResponse;
       if (!result.newImageBase64 || !result.newImageMimeType) continue;

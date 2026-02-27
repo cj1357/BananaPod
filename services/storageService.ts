@@ -17,6 +17,7 @@ export interface AppSettings {
   videoAspectRatio: '16:9' | '9:16';
   imageAspectRatio: ImageAspectRatio | 'auto';
   imageSize: ImageSize;
+  imageModel: string;
   imageCount: number;
 }
 
@@ -26,7 +27,7 @@ let persistenceRequested = false;
 // Request persistent storage to prevent browser from clearing IndexedDB data
 export async function requestPersistentStorage(): Promise<boolean> {
   if (persistenceRequested) return true;
-  
+
   try {
     if (navigator.storage && navigator.storage.persist) {
       const isPersisted = await navigator.storage.persisted();
@@ -35,7 +36,7 @@ export async function requestPersistentStorage(): Promise<boolean> {
         persistenceRequested = true;
         return true;
       }
-      
+
       const granted = await navigator.storage.persist();
       if (granted) {
         console.log('Persistent storage granted');
@@ -90,12 +91,12 @@ function openDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
-      
+
       // Create boards store
       if (!db.objectStoreNames.contains(BOARDS_STORE)) {
         db.createObjectStore(BOARDS_STORE, { keyPath: 'id' });
       }
-      
+
       // Create settings store (single record with key 'app')
       if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
         db.createObjectStore(SETTINGS_STORE);
@@ -113,7 +114,7 @@ export async function saveBoards(boards: Board[]): Promise<void> {
     // Clear existing boards and add new ones
     return new Promise((resolve, reject) => {
       const clearRequest = store.clear();
-      
+
       clearRequest.onsuccess = () => {
         let completed = 0;
         const total = boards.length;
@@ -253,7 +254,7 @@ export async function clearAllData(): Promise<void> {
   try {
     const db = await openDB();
     const transaction = db.transaction([BOARDS_STORE, SETTINGS_STORE], 'readwrite');
-    
+
     await Promise.all([
       new Promise<void>((resolve, reject) => {
         const request = transaction.objectStore(BOARDS_STORE).clear();
@@ -266,7 +267,7 @@ export async function clearAllData(): Promise<void> {
         request.onerror = () => reject(request.error);
       })
     ]);
-    
+
     console.log('All data cleared from IndexedDB');
   } catch (error) {
     console.error('Failed to clear data:', error);

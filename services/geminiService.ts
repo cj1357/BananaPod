@@ -1,5 +1,5 @@
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
 
 // Default timeout: 5 minutes for image generation
@@ -46,6 +46,7 @@ type ImageSize = '1K' | '2K' | '4K';
 interface ImageConfig {
   aspectRatio?: ImageAspectRatio;
   imageSize?: ImageSize;
+  imageModel?: string;
 }
 
 interface GeminiPart {
@@ -121,7 +122,8 @@ export async function editImage(
     : [...imageParts, textPart];
 
   try {
-    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    const model = imageConfig?.imageModel || DEFAULT_IMAGE_MODEL;
+    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: {
         'x-goog-api-key': apiConfig.apiKey,
@@ -198,7 +200,8 @@ export async function generateImageFromText(
   const baseUrl = apiConfig.baseUrl || DEFAULT_BASE_URL;
 
   try {
-    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    const model = imageConfig?.imageModel || DEFAULT_IMAGE_MODEL;
+    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: {
         'x-goog-api-key': apiConfig.apiKey,
@@ -368,7 +371,7 @@ export async function generateVideo(
         }
 
         onProgress('Downloading generated video...');
-        
+
         // Download the video using the URI with API key - 5 minute timeout for video download
         const videoResponse = await fetchWithTimeout(downloadLink, {
           headers: {

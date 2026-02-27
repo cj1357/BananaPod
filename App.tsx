@@ -421,6 +421,7 @@ const App: React.FC = () => {
     const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
     const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio | 'auto'>('auto');
     const [imageSize, setImageSize] = useState<ImageSize>('1K');
+    const [imageModel, setImageModel] = useState<string>('gemini-3.1-flash-image-preview');
     const [imageCount, setImageCount] = useState<number>(2);
     const [progressMessage, setProgressMessage] = useState<string>('');
 
@@ -488,6 +489,7 @@ const App: React.FC = () => {
                     if (savedSettings.videoAspectRatio) setVideoAspectRatio(savedSettings.videoAspectRatio);
                     if (savedSettings.imageAspectRatio) setImageAspectRatio(savedSettings.imageAspectRatio);
                     if (savedSettings.imageSize) setImageSize(savedSettings.imageSize);
+                    if ((savedSettings as any).imageModel) setImageModel((savedSettings as any).imageModel);
                     if (typeof (savedSettings as any).imageCount === 'number') setImageCount((savedSettings as any).imageCount);
                 }
             } catch (err) {
@@ -544,6 +546,7 @@ const App: React.FC = () => {
                 videoAspectRatio,
                 imageAspectRatio,
                 imageSize,
+                imageModel,
                 imageCount,
             };
             debouncedSaveSettings(settings);
@@ -561,6 +564,7 @@ const App: React.FC = () => {
         videoAspectRatio,
         imageAspectRatio,
         imageSize,
+        imageModel,
         imageCount,
     ]);
 
@@ -1809,7 +1813,9 @@ const App: React.FC = () => {
                         const tasks = Array.from({ length: imageCount }, async () => {
                             const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
                             if (!one.ok || one.items.length === 0) {
-                                lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                                if (!one.ok && 'textResponse' in one) {
+                                    lastTextResponse = one.textResponse ?? lastTextResponse;
+                                }
                                 return;
                             }
                             const it = one.items[0];
@@ -1841,7 +1847,7 @@ const App: React.FC = () => {
                     );
 
                     if (!result.ok) {
-                        setError(result.textResponse || 'Inpainting failed to produce an image.');
+                        setError(('textResponse' in result && result.textResponse) ? result.textResponse : 'Inpainting failed to produce an image.');
                         setIsLoading(false);
                         return;
                     }
@@ -1946,7 +1952,9 @@ const App: React.FC = () => {
                         try {
                             const one = await editImage(prompt, refs, undefined, imageConfig, 1);
                             if (!one.ok || one.items.length === 0) {
-                                lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                                if (!one.ok && 'textResponse' in one) {
+                                    lastTextResponse = one.textResponse ?? lastTextResponse;
+                                }
                                 return;
                             }
                             const it = one.items[0];
@@ -1967,7 +1975,9 @@ const App: React.FC = () => {
                             setProgressMessage(`Retry... ${produced + 1}/${imageCount}`);
                             const one = await editImage(prompt, refs, undefined, imageConfig, 1);
                             if (!one.ok || one.items.length === 0) {
-                                lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                                if (!one.ok && 'textResponse' in one) {
+                                    lastTextResponse = one.textResponse ?? lastTextResponse;
+                                }
                                 continue;
                             }
                             const it = one.items[0];
@@ -1997,7 +2007,7 @@ const App: React.FC = () => {
 
                 const result = await editImage(prompt, refs, undefined, imageConfig, imageCount);
                 if (!result.ok) {
-                    setError(result.textResponse || 'Generation failed to produce an image.');
+                    setError(('textResponse' in result && result.textResponse) ? result.textResponse : 'Generation failed to produce an image.');
                     setIsLoading(false);
                     return;
                 }
@@ -2083,7 +2093,9 @@ const App: React.FC = () => {
                 const tasks = Array.from({ length: imageCount }, async () => {
                     const one = await generateImageFromText(prompt, imageConfig, 1);
                     if (!one.ok || one.items.length === 0) {
-                        lastTextResponse = one.ok ? lastTextResponse : (one.textResponse ?? lastTextResponse);
+                        if (!one.ok && 'textResponse' in one) {
+                            lastTextResponse = one.textResponse ?? lastTextResponse;
+                        }
                         return;
                     }
                     const it = one.items[0];
@@ -2108,7 +2120,7 @@ const App: React.FC = () => {
 
             const result = await generateImageFromText(prompt, imageConfig, imageCount);
             if (!result.ok) {
-                setError(result.textResponse || 'Generation failed to produce an image.');
+                setError(('textResponse' in result && result.textResponse) ? result.textResponse : 'Generation failed to produce an image.');
                 setIsLoading(false);
                 return;
             }
@@ -3123,6 +3135,8 @@ const App: React.FC = () => {
                 setImageAspectRatio={setImageAspectRatio}
                 imageSize={imageSize}
                 setImageSize={setImageSize}
+                imageModel={imageModel}
+                setImageModel={setImageModel}
                 imageCount={imageCount}
                 setImageCount={setImageCount}
             />}

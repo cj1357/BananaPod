@@ -1,5 +1,5 @@
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
 
 type ImageAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
@@ -35,10 +35,12 @@ export async function geminiGenerateImageFromText(opts: {
   apiKey: string;
   baseUrl?: string;
   prompt: string;
+  imageModel?: string;
   imageConfig?: ImageConfig;
 }): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
   const baseUrl = opts.baseUrl || DEFAULT_BASE_URL;
-  const response = await fetch(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+  const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
+  const response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: {
       "x-goog-api-key": opts.apiKey,
@@ -73,6 +75,7 @@ export async function geminiEditImage(opts: {
   prompt: string;
   images: ImageInputBase64[];
   mask?: ImageInputBase64;
+  imageModel?: string;
   imageConfig?: ImageConfig;
 }): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
   const baseUrl = opts.baseUrl || DEFAULT_BASE_URL;
@@ -87,7 +90,8 @@ export async function geminiEditImage(opts: {
     ? [textPart, ...imageParts, { inlineData: { data: opts.mask.base64, mimeType: opts.mask.mimeType } }]
     : [...imageParts, textPart];
 
-  const response = await fetch(`${baseUrl}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+  const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
+  const response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: {
       "x-goog-api-key": opts.apiKey,

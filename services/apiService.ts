@@ -5,6 +5,7 @@ export type ImageSize = "1K" | "2K" | "4K";
 export type ImageConfig = {
   aspectRatio?: ImageAspectRatio;
   imageSize?: ImageSize;
+  imageModel?: string;
 };
 
 export type ClientImageRef =
