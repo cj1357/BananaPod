@@ -27,6 +27,6 @@ d1_databases = [
 # Optional:
 # - BASE_URL (default is https://generativelanguage.googleapis.com)
 [vars]
-BASE_URL = "https://gemini.lordorange.top"
+BASE_URL = "https://vertex.lordorange.top"
 
 

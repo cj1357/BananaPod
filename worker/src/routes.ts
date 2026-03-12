@@ -289,12 +289,27 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     if (!status.done) return json({ ok: true, done: false });
     if (status.error) return json({ ok: true, done: true, error: status.error.message });
 
-    const downloadLink = status.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+    const downloadLink =
+      status.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri
+      ?? status.response?.videos?.[0]?.uri
+      ?? status.response?.videos?.[0]?.gcsUri;
     if (!downloadLink) return errorJson(500, "No download link found");
 
-    const videoRes = await fetch(downloadLink, {
-      headers: { "x-goog-api-key": env.GEMINI_API_KEY },
-    });
+    if (!/^https?:\/\//i.test(downloadLink)) {
+      return errorJson(500, `Unsupported video URI returned by Vertex: ${downloadLink}`);
+    }
+
+    const needsApiKeyHeader =
+      downloadLink.includes("googleapis.com")
+      || (!!env.BASE_URL && downloadLink.startsWith(env.BASE_URL));
+    const videoRes = await fetch(
+      downloadLink,
+      needsApiKeyHeader
+        ? {
+            headers: { "x-goog-api-key": env.GEMINI_API_KEY },
+          }
+        : undefined
+    );
     if (!videoRes.ok) return errorJson(500, `Failed to download video: ${videoRes.statusText}`);
 
     const mimeType = videoRes.headers.get("Content-Type") || "video/mp4";
