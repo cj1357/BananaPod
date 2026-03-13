@@ -44,13 +44,6 @@ type VideoOperationResponse = {
   };
 };
 
-const IMAGE_SAFETY_SETTINGS = [
-  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
-  { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
-] as const;
-
 function buildVertexUrl(baseUrl: string, path: string, apiKey: string): string {
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL(path.replace(/^\//, ""), normalizedBaseUrl);
@@ -64,31 +57,18 @@ function buildVertexHeaders(apiKey: string): HeadersInit {
   };
 }
 
-type ImageRequestVariant = {
-  name: string;
-  includeSafetySettings: boolean;
-  includeImageSize: boolean;
-  includeAspectRatio: boolean;
-  includeImageOutputOptions: boolean;
-  includePersonGeneration: boolean;
-};
-
-function buildImageGenerationBody(parts: GeminiPart[], imageConfig: ImageConfig | undefined, variant: ImageRequestVariant): string {
+function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig): string {
   const vertexImageConfig: Record<string, unknown> = {};
-  if (variant.includeImageSize && imageConfig?.imageSize) {
+  if (imageConfig?.imageSize) {
     vertexImageConfig.imageSize = imageConfig.imageSize;
   }
-  if (variant.includeAspectRatio && imageConfig?.aspectRatio && imageConfig.aspectRatio !== "auto") {
+  if (imageConfig?.aspectRatio && imageConfig.aspectRatio !== "auto") {
     vertexImageConfig.aspectRatio = imageConfig.aspectRatio;
   }
-  if (variant.includeImageOutputOptions) {
-    vertexImageConfig.imageOutputOptions = {
-      mimeType: "image/png",
-    };
-  }
-  if (variant.includePersonGeneration) {
-    vertexImageConfig.personGeneration = "ALLOW_ALL";
-  }
+  vertexImageConfig.imageOutputOptions = {
+    mimeType: "image/png",
+  };
+  vertexImageConfig.personGeneration = "ALLOW_ALL";
 
   const body: Record<string, unknown> = {
     contents: [
@@ -109,14 +89,12 @@ function buildImageGenerationBody(parts: GeminiPart[], imageConfig: ImageConfig 
     (body.generationConfig as Record<string, unknown>).imageConfig = vertexImageConfig;
   }
 
-  if (variant.includeSafetySettings) {
-    body.safetySettings = [
-      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-    ];
-  }
+  body.safetySettings = [
+    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+  ];
 
   return JSON.stringify(body);
 }
@@ -187,10 +165,6 @@ async function parseGenerateContentResponse(response: Response): Promise<GeminiR
   }
 }
 
-function isVertexInvalidArgumentError(error: unknown): boolean {
-  return error instanceof Error && /400 Bad Request/.test(error.message) && /INVALID_ARGUMENT/.test(error.message);
-}
-
 async function requestImageGeneration(opts: {
   apiKey: string;
   baseUrl: string;
@@ -200,83 +174,10 @@ async function requestImageGeneration(opts: {
 }): Promise<GeminiResponse[]> {
   const url = buildVertexUrl(opts.baseUrl, `v1/publishers/google/models/${opts.model}:generateContent`, opts.apiKey);
   const headers = buildVertexHeaders(opts.apiKey);
-  const variants: ImageRequestVariant[] = [
-    {
-      name: "plugin-like",
-      includeSafetySettings: true,
-      includeImageSize: true,
-      includeAspectRatio: true,
-      includeImageOutputOptions: true,
-      includePersonGeneration: true,
-    },
-    {
-      name: "without-safety",
-      includeSafetySettings: false,
-      includeImageSize: true,
-      includeAspectRatio: true,
-      includeImageOutputOptions: true,
-      includePersonGeneration: true,
-    },
-    {
-      name: "without-person-generation",
-      includeSafetySettings: false,
-      includeImageSize: true,
-      includeAspectRatio: true,
-      includeImageOutputOptions: true,
-      includePersonGeneration: false,
-    },
-    {
-      name: "without-output-options",
-      includeSafetySettings: false,
-      includeImageSize: true,
-      includeAspectRatio: true,
-      includeImageOutputOptions: false,
-      includePersonGeneration: false,
-    },
-    {
-      name: "aspect-only",
-      includeSafetySettings: false,
-      includeImageSize: false,
-      includeAspectRatio: true,
-      includeImageOutputOptions: false,
-      includePersonGeneration: false,
-    },
-    {
-      name: "minimal",
-      includeSafetySettings: false,
-      includeImageSize: false,
-      includeAspectRatio: false,
-      includeImageOutputOptions: false,
-      includePersonGeneration: false,
-    },
-  ];
-
-  let lastError: unknown = null;
-  for (const variant of variants) {
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: buildImageGenerationBody(opts.parts, opts.imageConfig, variant),
-      });
-      const parsed = await parseGenerateContentResponse(response);
-      console.log(`Vertex image request variant succeeded: ${variant.name}`);
-      return parsed;
-    } catch (error) {
-      lastError = error;
-      if (!isVertexInvalidArgumentError(error)) throw error;
-      console.warn(`Vertex image request variant failed: ${variant.name}`, error);
-    }
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-
   const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: buildImageGenerationBody(opts.parts, opts.imageConfig, variants[variants.length - 1]),
+    method: "POST",
+    headers,
+    body: buildImageGenerationBody(opts.parts, opts.imageConfig),
   });
   return await parseGenerateContentResponse(response);
 }
