@@ -86,164 +86,170 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
 
   // --- Generate / Edit image ---
   if (url.pathname === "/api/generate/image" && request.method === "POST") {
-    const bodyText = await request.text();
-    const body = parseJsonSafe<{
-      action?: "generate" | "edit";
-      prompt?: string;
-      imageModel?: string;
-      count?: number;
-      stream?: boolean;
-      imageConfig?: ImageConfig;
-      images?: ClientImageRef[];
-      mask?: ClientImageRef;
-    }>(bodyText);
-    const prompt = (body?.prompt ?? "").trim();
-    if (!prompt) return errorJson(400, "Missing prompt");
+    try {
+      const bodyText = await request.text();
+      const body = parseJsonSafe<{
+        action?: "generate" | "edit";
+        prompt?: string;
+        imageModel?: string;
+        count?: number;
+        stream?: boolean;
+        imageConfig?: ImageConfig;
+        images?: ClientImageRef[];
+        mask?: ClientImageRef;
+      }>(bodyText);
+      const prompt = (body?.prompt ?? "").trim();
+      if (!prompt) return errorJson(400, "Missing prompt");
 
-    const action = body?.action ?? "generate";
-    const requestedCount = Number(body?.count ?? 1);
-    const count = Math.max(1, Math.min(5, Number.isFinite(requestedCount) ? Math.floor(requestedCount) : 1));
-    const wantStream = body?.stream === true || (request.headers.get("Accept") || "").includes("text/event-stream");
+      const action = body?.action ?? "generate";
+      const requestedCount = Number(body?.count ?? 1);
+      const count = Math.max(1, Math.min(5, Number.isFinite(requestedCount) ? Math.floor(requestedCount) : 1));
+      const wantStream = body?.stream === true || (request.headers.get("Accept") || "").includes("text/event-stream");
 
-    let base64Images: ImageInputBase64[] | null = null;
-    let mask: ImageInputBase64 | undefined;
-    if (action === "edit") {
-      const images = body?.images ?? [];
-      if (images.length === 0) return errorJson(400, "Missing images for edit");
-      base64Images = await Promise.all(images.map((r) => clientRefToBase64(env, auth.userKey, r)));
-      mask = body?.mask ? await clientRefToBase64(env, auth.userKey, body.mask) : undefined;
-    }
+      let base64Images: ImageInputBase64[] | null = null;
+      let mask: ImageInputBase64 | undefined;
+      if (action === "edit") {
+        const images = body?.images ?? [];
+        if (images.length === 0) return errorJson(400, "Missing images for edit");
+        base64Images = await Promise.all(images.map((r) => clientRefToBase64(env, auth.userKey, r)));
+        mask = body?.mask ? await clientRefToBase64(env, auth.userKey, body.mask) : undefined;
+      }
 
-    // Streaming mode: send each generated image as soon as it's ready.
-    if (wantStream) {
-      const encoder = new TextEncoder();
-      const headers = new Headers();
-      headers.set("Content-Type", "text/event-stream; charset=utf-8");
-      headers.set("Cache-Control", "no-cache");
-      headers.set("Connection", "keep-alive");
+      // Streaming mode: send each generated image as soon as it's ready.
+      if (wantStream) {
+        const encoder = new TextEncoder();
+        const headers = new Headers();
+        headers.set("Content-Type", "text/event-stream; charset=utf-8");
+        headers.set("Cache-Control", "no-cache");
+        headers.set("Connection", "keep-alive");
 
-      const stream = new ReadableStream<Uint8Array>({
-        async start(controller) {
-          const send = (event: string, data: unknown) => {
-            controller.enqueue(encoder.encode(`event: ${event}\n`));
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-          };
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const send = (event: string, data: unknown) => {
+              controller.enqueue(encoder.encode(`event: ${event}\n`));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            };
 
-          let produced = 0;
-          let lastTextResponse: string | null = null;
+            let produced = 0;
+            let lastTextResponse: string | null = null;
 
-          try {
-            send("start", { ok: true, requested: count });
+            try {
+              send("start", { ok: true, requested: count });
 
-            for (let i = 0; i < count; i++) {
-              const result =
-                action === "edit"
-                  ? await geminiEditImage({
-                    apiKey: env.GEMINI_API_KEY,
-                    baseUrl: env.BASE_URL,
-                    prompt,
-                    imageModel: body?.imageModel,
-                    images: base64Images!,
-                    mask,
-                    imageConfig: body?.imageConfig,
-                  })
-                  : await geminiGenerateImageFromText({
-                    apiKey: env.GEMINI_API_KEY,
-                    baseUrl: env.BASE_URL,
-                    prompt,
-                    imageModel: body?.imageModel,
-                    imageConfig: body?.imageConfig,
-                  });
+              for (let i = 0; i < count; i++) {
+                const result =
+                  action === "edit"
+                    ? await geminiEditImage({
+                      apiKey: env.GEMINI_API_KEY,
+                      baseUrl: env.BASE_URL,
+                      prompt,
+                      imageModel: body?.imageModel,
+                      images: base64Images!,
+                      mask,
+                      imageConfig: body?.imageConfig,
+                    })
+                    : await geminiGenerateImageFromText({
+                      apiKey: env.GEMINI_API_KEY,
+                      baseUrl: env.BASE_URL,
+                      prompt,
+                      imageModel: body?.imageModel,
+                      imageConfig: body?.imageConfig,
+                    });
 
-              lastTextResponse = result.textResponse ?? lastTextResponse;
+                lastTextResponse = result.textResponse ?? lastTextResponse;
 
-              if (!result.newImageBase64 || !result.newImageMimeType) {
-                send("skip", { index: i, textResponse: result.textResponse });
-                continue;
+                if (!result.newImageBase64 || !result.newImageMimeType) {
+                  send("skip", { index: i, textResponse: result.textResponse });
+                  continue;
+                }
+
+                const id = crypto.randomUUID();
+                const bytes = decodeBase64ToUint8Array(result.newImageBase64);
+                const mime = result.newImageMimeType;
+                const r2Key = `${auth.userKey}/${id}.${extFromMime(mime)}`;
+                await env.MEDIA_BUCKET.put(r2Key, bytes, { httpMetadata: { contentType: mime } });
+
+                await insertHistory(env.DB, {
+                  id,
+                  user_key: auth.userKey,
+                  kind: "image",
+                  prompt,
+                  created_at: Date.now(),
+                  r2_key: r2Key,
+                  mime_type: mime,
+                  extra_json: result.textResponse ? JSON.stringify({ textResponse: result.textResponse }) : null,
+                });
+
+                produced++;
+                send("item", { mediaId: id, mediaUrl: mediaUrl(id), mimeType: mime, textResponse: result.textResponse, index: i });
               }
 
-              const id = crypto.randomUUID();
-              const bytes = decodeBase64ToUint8Array(result.newImageBase64);
-              const mime = result.newImageMimeType;
-              const r2Key = `${auth.userKey}/${id}.${extFromMime(mime)}`;
-              await env.MEDIA_BUCKET.put(r2Key, bytes, { httpMetadata: { contentType: mime } });
-
-              await insertHistory(env.DB, {
-                id,
-                user_key: auth.userKey,
-                kind: "image",
-                prompt,
-                created_at: Date.now(),
-                r2_key: r2Key,
-                mime_type: mime,
-                extra_json: result.textResponse ? JSON.stringify({ textResponse: result.textResponse }) : null,
-              });
-
-              produced++;
-              send("item", { mediaId: id, mediaUrl: mediaUrl(id), mimeType: mime, textResponse: result.textResponse, index: i });
+              send("done", { ok: produced > 0, produced, textResponse: lastTextResponse });
+            } catch (e) {
+              console.error("Image generation stream failed", e);
+              send("error", { message: e instanceof Error ? e.message : "Unknown error" });
+            } finally {
+              controller.close();
             }
+          },
+        });
 
-            send("done", { ok: produced > 0, produced, textResponse: lastTextResponse });
-          } catch (e) {
-            send("error", { message: e instanceof Error ? e.message : "Unknown error" });
-          } finally {
-            controller.close();
-          }
-        },
-      });
+        return new Response(stream, { status: 200, headers });
+      }
 
-      return new Response(stream, { status: 200, headers });
+      // Non-streaming mode (legacy): collect all and return once.
+      const items: Array<{ mediaId: string; mediaUrl: string; mimeType: string; textResponse: string | null }> = [];
+      let lastTextResponse: string | null = null;
+
+      for (let i = 0; i < count; i++) {
+        const result =
+          action === "edit"
+            ? await geminiEditImage({
+              apiKey: env.GEMINI_API_KEY,
+              baseUrl: env.BASE_URL,
+              prompt,
+              imageModel: body?.imageModel,
+              images: base64Images!,
+              mask,
+              imageConfig: body?.imageConfig,
+            })
+            : await geminiGenerateImageFromText({
+              apiKey: env.GEMINI_API_KEY,
+              baseUrl: env.BASE_URL,
+              prompt,
+              imageModel: body?.imageModel,
+              imageConfig: body?.imageConfig,
+            });
+
+        lastTextResponse = result.textResponse ?? lastTextResponse;
+        if (!result.newImageBase64 || !result.newImageMimeType) continue;
+
+        const id = crypto.randomUUID();
+        const bytes = decodeBase64ToUint8Array(result.newImageBase64);
+        const mime = result.newImageMimeType;
+        const r2Key = `${auth.userKey}/${id}.${extFromMime(mime)}`;
+        await env.MEDIA_BUCKET.put(r2Key, bytes, { httpMetadata: { contentType: mime } });
+
+        await insertHistory(env.DB, {
+          id,
+          user_key: auth.userKey,
+          kind: "image",
+          prompt,
+          created_at: Date.now(),
+          r2_key: r2Key,
+          mime_type: mime,
+          extra_json: result.textResponse ? JSON.stringify({ textResponse: result.textResponse }) : null,
+        });
+
+        items.push({ mediaId: id, mediaUrl: mediaUrl(id), mimeType: mime, textResponse: result.textResponse });
+      }
+
+      if (items.length === 0) return json({ ok: false, textResponse: lastTextResponse }, { status: 200 });
+      return json({ ok: true, items }, { status: 200 });
+    } catch (e) {
+      console.error("Image generation request failed", e);
+      return errorJson(500, e instanceof Error ? e.message : "Image generation failed");
     }
-
-    // Non-streaming mode (legacy): collect all and return once.
-    const items: Array<{ mediaId: string; mediaUrl: string; mimeType: string; textResponse: string | null }> = [];
-    let lastTextResponse: string | null = null;
-
-    for (let i = 0; i < count; i++) {
-      const result =
-        action === "edit"
-          ? await geminiEditImage({
-            apiKey: env.GEMINI_API_KEY,
-            baseUrl: env.BASE_URL,
-            prompt,
-            imageModel: body?.imageModel,
-            images: base64Images!,
-            mask,
-            imageConfig: body?.imageConfig,
-          })
-          : await geminiGenerateImageFromText({
-            apiKey: env.GEMINI_API_KEY,
-            baseUrl: env.BASE_URL,
-            prompt,
-            imageModel: body?.imageModel,
-            imageConfig: body?.imageConfig,
-          });
-
-      lastTextResponse = result.textResponse ?? lastTextResponse;
-      if (!result.newImageBase64 || !result.newImageMimeType) continue;
-
-      const id = crypto.randomUUID();
-      const bytes = decodeBase64ToUint8Array(result.newImageBase64);
-      const mime = result.newImageMimeType;
-      const r2Key = `${auth.userKey}/${id}.${extFromMime(mime)}`;
-      await env.MEDIA_BUCKET.put(r2Key, bytes, { httpMetadata: { contentType: mime } });
-
-      await insertHistory(env.DB, {
-        id,
-        user_key: auth.userKey,
-        kind: "image",
-        prompt,
-        created_at: Date.now(),
-        r2_key: r2Key,
-        mime_type: mime,
-        extra_json: result.textResponse ? JSON.stringify({ textResponse: result.textResponse }) : null,
-      });
-
-      items.push({ mediaId: id, mediaUrl: mediaUrl(id), mimeType: mime, textResponse: result.textResponse });
-    }
-
-    if (items.length === 0) return json({ ok: false, textResponse: lastTextResponse }, { status: 200 });
-    return json({ ok: true, items }, { status: 200 });
   }
 
   // --- Video start ---

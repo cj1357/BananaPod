@@ -58,8 +58,39 @@ function buildVertexUrl(baseUrl: string, path: string, apiKey: string): string {
   return url.toString();
 }
 
-function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig): string {
-  return JSON.stringify({
+function buildVertexHeaders(apiKey: string): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+  };
+}
+
+type ImageRequestVariant = {
+  name: string;
+  includeSafetySettings: boolean;
+  includeImageSize: boolean;
+  includeAspectRatio: boolean;
+  includeImageOutputOptions: boolean;
+  includePersonGeneration: boolean;
+};
+
+function buildImageGenerationBody(parts: GeminiPart[], imageConfig: ImageConfig | undefined, variant: ImageRequestVariant): string {
+  const vertexImageConfig: Record<string, unknown> = {};
+  if (variant.includeImageSize && imageConfig?.imageSize) {
+    vertexImageConfig.imageSize = imageConfig.imageSize;
+  }
+  if (variant.includeAspectRatio && imageConfig?.aspectRatio && imageConfig.aspectRatio !== "auto") {
+    vertexImageConfig.aspectRatio = imageConfig.aspectRatio;
+  }
+  if (variant.includeImageOutputOptions) {
+    vertexImageConfig.imageOutputOptions = {
+      mimeType: "image/png",
+    };
+  }
+  if (variant.includePersonGeneration) {
+    vertexImageConfig.personGeneration = "ALLOW_ALL";
+  }
+
+  const body: Record<string, unknown> = {
     contents: [
       {
         role: "user",
@@ -69,22 +100,25 @@ function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig
     generationConfig: {
       temperature: 1,
       maxOutputTokens: 32768,
-      responseModalities: ["TEXT", "IMAGE"],
-      topP: 0.95,
-      imageConfig: {
-        aspectRatio: imageConfig?.aspectRatio ?? "auto",
-        ...(imageConfig?.imageSize && { imageSize: imageConfig.imageSize }),
-        imageOutputOptions: {
-          mimeType: "image/png",
-        },
-        personGeneration: "ALLOW_ALL",
-      },
-      thinkingConfig: {
-        thinkingLevel: "HIGH",
-      },
+      responseModalities: ["IMAGE"],
+      topP: 0.9,
     },
-    safetySettings: IMAGE_SAFETY_SETTINGS,
-  });
+  };
+
+  if (Object.keys(vertexImageConfig).length > 0) {
+    (body.generationConfig as Record<string, unknown>).imageConfig = vertexImageConfig;
+  }
+
+  if (variant.includeSafetySettings) {
+    body.safetySettings = [
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+    ];
+  }
+
+  return JSON.stringify(body);
 }
 
 function splitTopLevelJsonObjects(rawText: string): string[] {
@@ -132,10 +166,10 @@ function splitTopLevelJsonObjects(rawText: string): string[] {
   return objects;
 }
 
-async function parseStreamGenerateContentResponse(response: Response): Promise<GeminiResponse[]> {
+async function parseGenerateContentResponse(response: Response): Promise<GeminiResponse[]> {
   const rawText = await response.text();
   if (!response.ok) {
-    throw new Error(`Vertex streamGenerateContent failed: ${response.status} ${response.statusText} - ${rawText}`);
+    throw new Error(`Vertex generateContent failed: ${response.status} ${response.statusText} - ${rawText}`);
   }
 
   const trimmed = rawText.trim();
@@ -149,8 +183,102 @@ async function parseStreamGenerateContentResponse(response: Response): Promise<G
     if (chunks.length > 0) {
       return chunks.map((chunk) => JSON.parse(chunk) as GeminiResponse);
     }
-    throw new Error(`Unable to parse Vertex streamGenerateContent response: ${trimmed.slice(0, 1000)}`);
+    throw new Error(`Unable to parse Vertex generateContent response: ${trimmed.slice(0, 1000)}`);
   }
+}
+
+function isVertexInvalidArgumentError(error: unknown): boolean {
+  return error instanceof Error && /400 Bad Request/.test(error.message) && /INVALID_ARGUMENT/.test(error.message);
+}
+
+async function requestImageGeneration(opts: {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  parts: GeminiPart[];
+  imageConfig?: ImageConfig;
+}): Promise<GeminiResponse[]> {
+  const url = buildVertexUrl(opts.baseUrl, `v1/publishers/google/models/${opts.model}:generateContent`, opts.apiKey);
+  const headers = buildVertexHeaders(opts.apiKey);
+  const variants: ImageRequestVariant[] = [
+    {
+      name: "plugin-like",
+      includeSafetySettings: true,
+      includeImageSize: true,
+      includeAspectRatio: true,
+      includeImageOutputOptions: true,
+      includePersonGeneration: true,
+    },
+    {
+      name: "without-safety",
+      includeSafetySettings: false,
+      includeImageSize: true,
+      includeAspectRatio: true,
+      includeImageOutputOptions: true,
+      includePersonGeneration: true,
+    },
+    {
+      name: "without-person-generation",
+      includeSafetySettings: false,
+      includeImageSize: true,
+      includeAspectRatio: true,
+      includeImageOutputOptions: true,
+      includePersonGeneration: false,
+    },
+    {
+      name: "without-output-options",
+      includeSafetySettings: false,
+      includeImageSize: true,
+      includeAspectRatio: true,
+      includeImageOutputOptions: false,
+      includePersonGeneration: false,
+    },
+    {
+      name: "aspect-only",
+      includeSafetySettings: false,
+      includeImageSize: false,
+      includeAspectRatio: true,
+      includeImageOutputOptions: false,
+      includePersonGeneration: false,
+    },
+    {
+      name: "minimal",
+      includeSafetySettings: false,
+      includeImageSize: false,
+      includeAspectRatio: false,
+      includeImageOutputOptions: false,
+      includePersonGeneration: false,
+    },
+  ];
+
+  let lastError: unknown = null;
+  for (const variant of variants) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: buildImageGenerationBody(opts.parts, opts.imageConfig, variant),
+      });
+      const parsed = await parseGenerateContentResponse(response);
+      console.log(`Vertex image request variant succeeded: ${variant.name}`);
+      return parsed;
+    } catch (error) {
+      lastError = error;
+      if (!isVertexInvalidArgumentError(error)) throw error;
+      console.warn(`Vertex image request variant failed: ${variant.name}`, error);
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: buildImageGenerationBody(opts.parts, opts.imageConfig, variants[variants.length - 1]),
+  });
+  return await parseGenerateContentResponse(response);
 }
 
 function extractImageResponse(responses: GeminiResponse[]): {
@@ -207,18 +335,13 @@ export async function geminiGenerateImageFromText(opts: {
 }): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
   const baseUrl = opts.baseUrl || DEFAULT_BASE_URL;
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
-  const response = await fetch(
-    buildVertexUrl(baseUrl, `v1/publishers/google/models/${model}:streamGenerateContent`, opts.apiKey),
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: buildImageGenerationBody([{ text: opts.prompt }], opts.imageConfig),
-    }
-  );
-
-  return extractImageResponse(await parseStreamGenerateContentResponse(response));
+  return extractImageResponse(await requestImageGeneration({
+    apiKey: opts.apiKey,
+    baseUrl,
+    model,
+    parts: [{ text: opts.prompt }],
+    imageConfig: opts.imageConfig,
+  }));
 }
 
 export async function geminiEditImage(opts: {
@@ -240,18 +363,13 @@ export async function geminiEditImage(opts: {
     : [...imageParts, textPart];
 
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
-  const response = await fetch(
-    buildVertexUrl(baseUrl, `v1/publishers/google/models/${model}:streamGenerateContent`, opts.apiKey),
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: buildImageGenerationBody(parts, opts.imageConfig),
-    }
-  );
-
-  return extractImageResponse(await parseStreamGenerateContentResponse(response));
+  return extractImageResponse(await requestImageGeneration({
+    apiKey: opts.apiKey,
+    baseUrl,
+    model,
+    parts,
+    imageConfig: opts.imageConfig,
+  }));
 }
 
 export async function geminiVideoStart(opts: {
@@ -274,9 +392,7 @@ export async function geminiVideoStart(opts: {
     buildVertexUrl(baseUrl, `v1/publishers/google/models/${VIDEO_MODEL}:predictLongRunning`, opts.apiKey),
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: buildVertexHeaders(opts.apiKey),
       body: JSON.stringify({
         instances: [instance],
         parameters: { aspectRatio: opts.aspectRatio, sampleCount: 1 },
@@ -305,9 +421,7 @@ export async function geminiVideoStatus(opts: {
     buildVertexUrl(baseUrl, `v1/publishers/google/models/${VIDEO_MODEL}:fetchPredictOperation`, opts.apiKey),
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: buildVertexHeaders(opts.apiKey),
       body: JSON.stringify({
         operationName: opts.operationName,
       }),

@@ -2091,17 +2091,21 @@ const App: React.FC = () => {
                 };
 
                 const tasks = Array.from({ length: imageCount }, async () => {
-                    const one = await generateImageFromText(prompt, imageConfig, 1);
-                    if (!one.ok || one.items.length === 0) {
-                        if (!one.ok && 'textResponse' in one) {
-                            lastTextResponse = one.textResponse ?? lastTextResponse;
+                    try {
+                        const one = await generateImageFromText(prompt, imageConfig, 1);
+                        if (!one.ok || one.items.length === 0) {
+                            if (!one.ok && 'textResponse' in one) {
+                                lastTextResponse = one.textResponse ?? lastTextResponse;
+                            }
+                            return;
                         }
-                        return;
+                        const it = one.items[0];
+                        produced += 1;
+                        setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                        placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
+                    } catch (e) {
+                        lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                     }
-                    const it = one.items[0];
-                    produced += 1;
-                    setProgressMessage(`Generating... ${produced}/${imageCount}`);
-                    placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
                 });
 
                 await Promise.allSettled(tasks);
