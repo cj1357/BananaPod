@@ -424,6 +424,7 @@ const App: React.FC = () => {
     const [imageModel, setImageModel] = useState<string>('gemini-3.1-flash-image-preview');
     const [imageCount, setImageCount] = useState<number>(2);
     const [progressMessage, setProgressMessage] = useState<string>('');
+    const [clipboardCopyState, setClipboardCopyState] = useState<{ status: 'copying' | 'success'; elementId: string } | null>(null);
 
     // API Configuration
     // (Moved to Worker; no client-side API key)
@@ -514,7 +515,16 @@ const App: React.FC = () => {
     const previousToolRef = useRef<Tool>('select');
     const spacebarDownTime = useRef<number | null>(null);
     const imageSizeUpdateInFlight = useRef<Set<string>>(new Set());
+    const clipboardStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     elementsRef.current = elements;
+
+    useEffect(() => {
+        return () => {
+            if (clipboardStatusTimeoutRef.current) {
+                clearTimeout(clipboardStatusTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         setSelectedElementIds([]);
@@ -1464,6 +1474,11 @@ const App: React.FC = () => {
 
     const handleCopyImageToClipboard = useCallback(async (element: ImageElement) => {
         setError(null);
+        if (clipboardStatusTimeoutRef.current) {
+            clearTimeout(clipboardStatusTimeoutRef.current);
+            clipboardStatusTimeoutRef.current = null;
+        }
+        setClipboardCopyState({ status: 'copying', elementId: element.id });
 
         try {
             if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
@@ -1534,7 +1549,13 @@ const App: React.FC = () => {
                     'image/png': createClipboardBlob(),
                 })
             ]);
+            setClipboardCopyState({ status: 'success', elementId: element.id });
+            clipboardStatusTimeoutRef.current = setTimeout(() => {
+                setClipboardCopyState((current) => current?.elementId === element.id ? null : current);
+                clipboardStatusTimeoutRef.current = null;
+            }, 1500);
         } catch (err) {
+            setClipboardCopyState((current) => current?.elementId === element.id ? null : current);
             const message =
                 err instanceof DOMException && err.name === 'NotAllowedError'
                     ? (language === 'zho' ? '复制图片到系统剪贴板被浏览器阻止，请先点击页面后重试。' : 'The browser blocked image clipboard access. Click the page and try again.')
@@ -2713,6 +2734,16 @@ const App: React.FC = () => {
     return (
         <div className="w-screen h-screen flex flex-col font-sans" style={{ backgroundColor: canvasBackgroundColor }} onDragOver={handleDragOver} onDrop={handleDrop}>
             {isLoading && <Loader progressMessage={progressMessage} />}
+            {clipboardCopyState && (
+                <div className={`absolute top-4 right-4 z-50 px-4 py-2 rounded-md shadow-lg border text-sm ${clipboardCopyState.status === 'copying'
+                    ? 'bg-amber-100 border-amber-300 text-amber-800'
+                    : 'bg-green-100 border-green-300 text-green-800'
+                    }`}>
+                    {clipboardCopyState.status === 'copying'
+                        ? t('contextMenu.copyingToClipboard')
+                        : t('contextMenu.copiedToClipboard')}
+                </div>
+            )}
             {error && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md shadow-lg flex items-center max-w-lg">
                     <span className="flex-grow">{error}</span>
@@ -3034,7 +3065,7 @@ const App: React.FC = () => {
                                 >
                                     <div className="p-1.5 bg-white rounded-lg shadow-lg flex items-center justify-center space-x-2 border border-gray-200 text-gray-800">
                                         <button title={t('contextMenu.copy')} onClick={() => handleCopyElement(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
-                                        {element.type === 'image' && <button title={t('contextMenu.copyToClipboard')} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => handleCopyImageToClipboard(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 3h6"></path><path d="M10 2h4a1 1 0 0 1 1 1v1H9V3a1 1 0 0 1 1-1z"></path><rect x="5" y="4" width="14" height="18" rx="2"></rect></svg></button>}
+                                        {element.type === 'image' && <button title={clipboardCopyState?.elementId === element.id ? (clipboardCopyState.status === 'copying' ? t('contextMenu.copyingToClipboard') : t('contextMenu.copiedToClipboard')) : t('contextMenu.copyToClipboard')} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => handleCopyImageToClipboard(element)} disabled={clipboardCopyState?.status === 'copying' && clipboardCopyState.elementId === element.id} className={`p-2 rounded flex items-center justify-center ${(clipboardCopyState?.status === 'copying' && clipboardCopyState.elementId === element.id) ? 'bg-amber-100 text-amber-700 cursor-wait' : (clipboardCopyState?.status === 'success' && clipboardCopyState.elementId === element.id) ? 'bg-green-100 text-green-700' : 'hover:bg-gray-100'}`}>{clipboardCopyState?.elementId === element.id && clipboardCopyState.status === 'copying' ? <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> : clipboardCopyState?.elementId === element.id && clipboardCopyState.status === 'success' ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 3h6"></path><path d="M10 2h4a1 1 0 0 1 1 1v1H9V3a1 1 0 0 1 1-1z"></path><rect x="5" y="4" width="14" height="18" rx="2"></rect></svg>}</button>}
                                         {element.type === 'image' && <button title={t('contextMenu.download')} onClick={() => handleDownloadImage(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>}
                                         {element.type === 'video' && <a title={t('contextMenu.download')} href={element.href} download={`video-${element.id}.mp4`} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></a>}
                                         {element.type === 'image' && <button title={t('contextMenu.crop')} onClick={() => handleStartCrop(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path></svg></button>}

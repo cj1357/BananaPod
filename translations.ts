@@ -138,6 +138,8 @@ export const translations = {
     contextMenu: {
         copy: 'Copy',
         copyToClipboard: 'Copy to Clipboard',
+        copyingToClipboard: 'Copying...',
+        copiedToClipboard: 'Copied to clipboard',
         download: 'Download',
         crop: 'Crop',
         delete: 'Delete',
@@ -262,6 +264,8 @@ export const translations = {
     contextMenu: {
         copy: '复制',
         copyToClipboard: '复制到剪贴板',
+        copyingToClipboard: '复制中...',
+        copiedToClipboard: '复制成功',
         download: '下载',
         crop: '裁剪',
         delete: '删除',
