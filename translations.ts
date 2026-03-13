@@ -137,6 +137,7 @@ export const translations = {
     },
     contextMenu: {
         copy: 'Copy',
+        copyToClipboard: 'Copy to Clipboard',
         download: 'Download',
         crop: 'Crop',
         delete: 'Delete',
@@ -260,6 +261,7 @@ export const translations = {
     },
     contextMenu: {
         copy: '复制',
+        copyToClipboard: '复制到剪贴板',
         download: '下载',
         crop: '裁剪',
         delete: '删除',

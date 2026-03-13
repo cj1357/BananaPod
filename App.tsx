@@ -1462,6 +1462,90 @@ const App: React.FC = () => {
         });
     };
 
+    const handleCopyImageToClipboard = useCallback(async (element: ImageElement) => {
+        setError(null);
+
+        try {
+            if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+                throw new Error(language === 'zho' ? '当前浏览器不支持复制图片到系统剪贴板。' : 'This browser does not support copying images to the system clipboard.');
+            }
+            if (!document.hasFocus()) {
+                throw new Error(language === 'zho' ? '窗口未聚焦，请先点击页面后再复制。' : 'Window is not focused. Click the page and try again.');
+            }
+
+            const createClipboardBlob = async (): Promise<Blob> => {
+                const response = await fetch(element.href);
+                if (!response.ok) {
+                    throw new Error(language === 'zho' ? '无法读取原始图片数据。' : 'Failed to fetch original image data.');
+                }
+
+                const sourceBlob = await response.blob();
+                const needsRoundedCorners = !!(element.borderRadius && element.borderRadius > 0);
+                if (!needsRoundedCorners && sourceBlob.type === 'image/png') {
+                    return sourceBlob;
+                }
+
+                const objectUrl = URL.createObjectURL(sourceBlob);
+                try {
+                    const img = await loadImageWithTimeout(objectUrl);
+                    const targetWidth = Math.max(1, img.naturalWidth || Math.round(element.width));
+                    const targetHeight = Math.max(1, img.naturalHeight || Math.round(element.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeight;
+
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        throw new Error(language === 'zho' ? '无法创建剪贴板画布。' : 'Failed to create clipboard canvas.');
+                    }
+
+                    if (needsRoundedCorners) {
+                        const scale = Math.min(targetWidth / Math.max(1, element.width), targetHeight / Math.max(1, element.height));
+                        const radius = Math.min((element.borderRadius || 0) * scale, targetWidth / 2, targetHeight / 2);
+                        ctx.beginPath();
+                        ctx.moveTo(radius, 0);
+                        ctx.lineTo(targetWidth - radius, 0);
+                        ctx.quadraticCurveTo(targetWidth, 0, targetWidth, radius);
+                        ctx.lineTo(targetWidth, targetHeight - radius);
+                        ctx.quadraticCurveTo(targetWidth, targetHeight, targetWidth - radius, targetHeight);
+                        ctx.lineTo(radius, targetHeight);
+                        ctx.quadraticCurveTo(0, targetHeight, 0, targetHeight - radius);
+                        ctx.lineTo(0, radius);
+                        ctx.quadraticCurveTo(0, 0, radius, 0);
+                        ctx.closePath();
+                        ctx.clip();
+                    }
+
+                    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+                    return await new Promise<Blob>((resolve, reject) => {
+                        canvas.toBlob((value) => {
+                            if (value) resolve(value);
+                            else reject(new Error(language === 'zho' ? '无法生成剪贴板图片。' : 'Failed to create clipboard image.'));
+                        }, 'image/png');
+                    });
+                } finally {
+                    URL.revokeObjectURL(objectUrl);
+                }
+            };
+
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    'image/png': createClipboardBlob(),
+                })
+            ]);
+        } catch (err) {
+            const message =
+                err instanceof DOMException && err.name === 'NotAllowedError'
+                    ? (language === 'zho' ? '复制图片到系统剪贴板被浏览器阻止，请先点击页面后重试。' : 'The browser blocked image clipboard access. Click the page and try again.')
+                    : err instanceof Error
+                        ? err.message
+                        : (language === 'zho' ? '复制到剪贴板失败。' : 'Failed to copy image to clipboard.');
+            setError(message);
+            console.error('Failed to copy image to clipboard:', err);
+        }
+    }, [language]);
+
     const handleDownloadImage = (element: ImageElement) => {
         const link = document.createElement('a');
         link.href = element.href;
@@ -2932,7 +3016,7 @@ const App: React.FC = () => {
                                 }
                                 if (element.type === 'text') toolbarScreenWidth = 220;
                                 if (element.type === 'arrow' || element.type === 'line') toolbarScreenWidth = 220;
-                                if (element.type === 'image') toolbarScreenWidth = 340;
+                                if (element.type === 'image') toolbarScreenWidth = 390;
                                 if (element.type === 'video') toolbarScreenWidth = 160;
                                 if (element.type === 'group') toolbarScreenWidth = 80;
 
@@ -2950,6 +3034,7 @@ const App: React.FC = () => {
                                 >
                                     <div className="p-1.5 bg-white rounded-lg shadow-lg flex items-center justify-center space-x-2 border border-gray-200 text-gray-800">
                                         <button title={t('contextMenu.copy')} onClick={() => handleCopyElement(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                                        {element.type === 'image' && <button title={t('contextMenu.copyToClipboard')} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => handleCopyImageToClipboard(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 3h6"></path><path d="M10 2h4a1 1 0 0 1 1 1v1H9V3a1 1 0 0 1 1-1z"></path><rect x="5" y="4" width="14" height="18" rx="2"></rect></svg></button>}
                                         {element.type === 'image' && <button title={t('contextMenu.download')} onClick={() => handleDownloadImage(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>}
                                         {element.type === 'video' && <a title={t('contextMenu.download')} href={element.href} download={`video-${element.id}.mp4`} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></a>}
                                         {element.type === 'image' && <button title={t('contextMenu.crop')} onClick={() => handleStartCrop(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path></svg></button>}
