@@ -1916,20 +1916,44 @@ const App: React.FC = () => {
                         };
 
                         const tasks = Array.from({ length: imageCount }, async () => {
-                            const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
-                            if (!one.ok || one.items.length === 0) {
-                                if (!one.ok && 'textResponse' in one) {
-                                    lastTextResponse = one.textResponse ?? lastTextResponse;
+                            try {
+                                const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
+                                if (!one.ok || one.items.length === 0) {
+                                    if (!one.ok && 'textResponse' in one) {
+                                        lastTextResponse = one.textResponse ?? lastTextResponse;
+                                    }
+                                    return;
                                 }
-                                return;
+                                const it = one.items[0];
+                                produced += 1;
+                                setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                                placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
+                            } catch (e) {
+                                lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                             }
-                            const it = one.items[0];
-                            produced += 1;
-                            setProgressMessage(`Generating... ${produced}/${imageCount}`);
-                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
                         });
 
                         await Promise.allSettled(tasks);
+
+                        const missing = imageCount - produced;
+                        for (let i = 0; i < missing; i++) {
+                            try {
+                                setProgressMessage(`Retry... ${produced + 1}/${imageCount}`);
+                                const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
+                                if (!one.ok || one.items.length === 0) {
+                                    if (!one.ok && 'textResponse' in one) {
+                                        lastTextResponse = one.textResponse ?? lastTextResponse;
+                                    }
+                                    continue;
+                                }
+                                const it = one.items[0];
+                                produced += 1;
+                                placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
+                            } catch (e) {
+                                lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                            }
+                        }
+
                         await placeChain;
 
                         if (produced === 0) {
@@ -2101,10 +2125,6 @@ const App: React.FC = () => {
                         return;
                     }
 
-                    if (produced < imageCount) {
-                        setError(`Only generated ${produced}/${imageCount}. ${lastTextResponse || ''}`.trim());
-                    }
-
                     setSelectedElementIds(newIds);
                     setIsLoading(false);
                     return;
@@ -2214,6 +2234,26 @@ const App: React.FC = () => {
                 });
 
                 await Promise.allSettled(tasks);
+
+                const missing = imageCount - produced;
+                for (let i = 0; i < missing; i++) {
+                    try {
+                        setProgressMessage(`Retry... ${produced + 1}/${imageCount}`);
+                        const one = await generateImageFromText(prompt, imageConfig, 1);
+                        if (!one.ok || one.items.length === 0) {
+                            if (!one.ok && 'textResponse' in one) {
+                                lastTextResponse = one.textResponse ?? lastTextResponse;
+                            }
+                            continue;
+                        }
+                        const it = one.items[0];
+                        produced += 1;
+                        placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
+                    } catch (e) {
+                        lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                    }
+                }
+
                 await placeChain;
 
                 if (produced === 0) {

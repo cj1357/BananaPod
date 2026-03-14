@@ -18,18 +18,45 @@ export type GenerateImageResult =
   | { ok: true; items: GenerateImageItem[] }
   | { ok: false; textResponse: string | null };
 
+async function readApiErrorMessage(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+
+  try {
+    const parsed = JSON.parse(text) as { error?: string | { message?: string }; message?: string };
+    if (typeof parsed?.error === "string" && parsed.error) return parsed.error;
+    if (typeof parsed?.error === "object" && parsed.error?.message) return parsed.error.message;
+    if (typeof parsed?.message === "string" && parsed.message) return parsed.message;
+  } catch {
+    // ignore non-JSON responses
+  }
+
+  const cloudflareCode = text.match(/cf-error-code">(\d+)</)?.[1];
+  if (cloudflareCode === "1102") {
+    return "Cloudflare Worker 资源超限（1102），请稍后重试。";
+  }
+  if (cloudflareCode === "1101") {
+    return "Cloudflare Worker 执行异常（1101），请稍后重试。";
+  }
+
+  if (/<html[\s>]/i.test(text)) {
+    return `请求失败：${res.status} ${res.statusText}`.trim();
+  }
+
+  return text || `请求失败：${res.status} ${res.statusText}`.trim();
+}
+
 export async function authCheck(userKey: string): Promise<void> {
   const res = await fetch("/api/auth/check", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userKey }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
 }
 
 export async function authLogout(): Promise<void> {
   const res = await fetch("/api/auth/logout", { method: "POST" });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
 }
 
 export async function generateImageFromText(prompt: string, imageConfig?: ImageConfig, count: number = 1): Promise<GenerateImageResult> {
@@ -38,7 +65,7 @@ export async function generateImageFromText(prompt: string, imageConfig?: ImageC
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "generate", prompt, imageConfig, count }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
   return (await res.json()) as GenerateImageResult;
 }
 
@@ -96,7 +123,7 @@ export async function generateImageFromTextStream(
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({ action: "generate", prompt, imageConfig, count, stream: true }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
   let produced = 0;
   let requested = count;
   let lastText: string | null = null;
@@ -129,7 +156,7 @@ export async function editImageStream(
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({ action: "edit", prompt, images, mask, imageConfig, count, stream: true }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
   let produced = 0;
   let requested = count;
   let lastText: string | null = null;
@@ -160,7 +187,7 @@ export async function editImage(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "edit", prompt, images, mask, imageConfig, count }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
   return (await res.json()) as GenerateImageResult;
 }
 
@@ -170,7 +197,7 @@ export async function videoStart(prompt: string, aspectRatio: "16:9" | "9:16", i
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, aspectRatio, image }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
   const data = (await res.json()) as { ok: boolean; operationName: string };
   if (!data.operationName) throw new Error("Missing operationName");
   return { operationName: data.operationName };
@@ -181,7 +208,7 @@ export async function videoStatus(operationName: string): Promise<
   | { ok: true; done: true; mediaId?: string; mediaUrl?: string; mimeType?: string; error?: string }
 > {
   const res = await fetch(`/api/video/status?name=${encodeURIComponent(operationName)}`);
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
   return (await res.json()) as any;
 }
 
@@ -198,14 +225,14 @@ export async function historyList(limit: number, cursor?: string | null): Promis
   params.set("limit", String(limit));
   if (cursor) params.set("cursor", cursor);
   const res = await fetch(`/api/history?${params.toString()}`);
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
   const data = (await res.json()) as { ok: boolean; items: HistoryItem[]; nextCursor: string | null };
   return { items: data.items, nextCursor: data.nextCursor };
 }
 
 export async function historyDelete(id: string): Promise<void> {
   const res = await fetch(`/api/history/${encodeURIComponent(id)}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
 }
 
 
