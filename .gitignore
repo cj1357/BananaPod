@@ -26,3 +26,9 @@ dist-ssr
 package-lock.json
 
 .wrangler
+
+test-output.png
+test-output.log
+gcp-key.json
+.dev.vars
+test-vertex-standard.mjs

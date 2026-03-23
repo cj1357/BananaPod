@@ -3,13 +3,13 @@ import { createSession, destroySession, isAllowedUserKey, requireAuth } from "./
 import { decodeBase64ToUint8Array, encodeUint8ArrayToBase64 } from "./crypto";
 import { deleteHistoryById, getHistoryById, insertHistory, listHistory } from "./db";
 import { geminiEditImage, geminiGenerateImageFromText, geminiVideoStart, geminiVideoStatus, type ImageConfig, type ImageInputBase64 } from "./gemini";
+import { getAccessToken, getProjectId } from "./gcp-auth";
 
 export type Env = {
   USERS_KV: KVNamespace;
   MEDIA_BUCKET: R2Bucket;
   DB: D1Database;
-  GEMINI_API_KEY: string;
-  BASE_URL?: string;
+  GCP_SERVICE_ACCOUNT_KEY: string;
 };
 
 type ClientImageRef =
@@ -70,6 +70,10 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
   // everything below requires session auth
   const auth = await requireAuth(request, env.USERS_KV, env.DB);
   if (!auth) return errorJson(401, "Unauthorized");
+
+  // Get GCP access token + project ID for Vertex AI calls
+  const accessToken = await getAccessToken(env.GCP_SERVICE_ACCOUNT_KEY);
+  const projectId = getProjectId(env.GCP_SERVICE_ACCOUNT_KEY);
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
     const { clearSessionCookieHeader } = await destroySession(env.DB, auth.sessionId);
@@ -140,8 +144,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
                 const result =
                   action === "edit"
                     ? await geminiEditImage({
-                      apiKey: env.GEMINI_API_KEY,
-                      baseUrl: env.BASE_URL,
+                      accessToken,
+                      projectId,
                       prompt,
                       imageModel: body?.imageModel,
                       images: base64Images!,
@@ -149,8 +153,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
                       imageConfig: body?.imageConfig,
                     })
                     : await geminiGenerateImageFromText({
-                      apiKey: env.GEMINI_API_KEY,
-                      baseUrl: env.BASE_URL,
+                      accessToken,
+                      projectId,
                       prompt,
                       imageModel: body?.imageModel,
                       imageConfig: body?.imageConfig,
@@ -205,8 +209,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
         const result =
           action === "edit"
             ? await geminiEditImage({
-              apiKey: env.GEMINI_API_KEY,
-              baseUrl: env.BASE_URL,
+              accessToken,
+              projectId,
               prompt,
               imageModel: body?.imageModel,
               images: base64Images!,
@@ -214,8 +218,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
               imageConfig: body?.imageConfig,
             })
             : await geminiGenerateImageFromText({
-              apiKey: env.GEMINI_API_KEY,
-              baseUrl: env.BASE_URL,
+              accessToken,
+              projectId,
               prompt,
               imageModel: body?.imageModel,
               imageConfig: body?.imageConfig,
@@ -266,8 +270,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     const image = body?.image ? await clientRefToBase64(env, auth.userKey, body.image) : undefined;
 
     const { operationName } = await geminiVideoStart({
-      apiKey: env.GEMINI_API_KEY,
-      baseUrl: env.BASE_URL,
+      accessToken,
+      projectId,
       prompt,
       aspectRatio,
       image,
@@ -291,7 +295,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     const opMeta = opMetaRaw ? parseJsonSafe<{ userKey: string; prompt: string }>(opMetaRaw) : null;
     if (!opMeta || opMeta.userKey !== auth.userKey) return errorJson(404, "Operation not found");
 
-    const status = await geminiVideoStatus({ apiKey: env.GEMINI_API_KEY, baseUrl: env.BASE_URL, operationName });
+    const status = await geminiVideoStatus({ accessToken, projectId, operationName });
     if (!status.done) return json({ ok: true, done: false });
     if (status.error) return json({ ok: true, done: true, error: status.error.message });
 
@@ -305,14 +309,12 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
       return errorJson(500, `Unsupported video URI returned by Vertex: ${downloadLink}`);
     }
 
-    const needsApiKeyHeader =
-      downloadLink.includes("googleapis.com")
-      || (!!env.BASE_URL && downloadLink.startsWith(env.BASE_URL));
+    const needsBearerAuth = downloadLink.includes("googleapis.com");
     const videoRes = await fetch(
       downloadLink,
-      needsApiKeyHeader
+      needsBearerAuth
         ? {
-            headers: { "x-goog-api-key": env.GEMINI_API_KEY },
+            headers: { "Authorization": `Bearer ${accessToken}` },
           }
         : undefined
     );

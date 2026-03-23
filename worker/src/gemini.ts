@@ -1,4 +1,3 @@
-const DEFAULT_BASE_URL = "https://vertex.lordorange.top";
 const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
 
@@ -44,18 +43,21 @@ type VideoOperationResponse = {
   };
 };
 
-function buildVertexUrl(baseUrl: string, path: string, apiKey: string): string {
-  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const url = new URL(path.replace(/^\//, ""), normalizedBaseUrl);
-  url.searchParams.set("key", apiKey);
-  return url.toString();
+// ── URL / Headers (Standard Mode: global endpoint + Bearer token) ──
+
+function buildVertexUrl(projectId: string, modelPath: string): string {
+  // Global 端点: https://aiplatform.googleapis.com/v1/projects/{PROJECT}/locations/global/publishers/google/models/{MODEL}:{METHOD}
+  return `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${modelPath}`;
 }
 
-function buildVertexHeaders(apiKey: string): HeadersInit {
+function buildBearerHeaders(accessToken: string): HeadersInit {
   return {
+    "Authorization": `Bearer ${accessToken}`,
     "Content-Type": "application/json",
   };
 }
+
+// ── Request body builders ──
 
 function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig): string {
   const vertexImageConfig: Record<string, unknown> = {};
@@ -98,6 +100,8 @@ function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig
 
   return JSON.stringify(body);
 }
+
+// ── Response parsing ──
 
 function splitTopLevelJsonObjects(rawText: string): string[] {
   const objects: string[] = [];
@@ -165,15 +169,17 @@ async function parseGenerateContentResponse(response: Response): Promise<GeminiR
   }
 }
 
+// ── Core request function ──
+
 async function requestImageGeneration(opts: {
-  apiKey: string;
-  baseUrl: string;
+  accessToken: string;
+  projectId: string;
   model: string;
   parts: GeminiPart[];
   imageConfig?: ImageConfig;
 }): Promise<GeminiResponse[]> {
-  const url = buildVertexUrl(opts.baseUrl, `v1/publishers/google/models/${opts.model}:generateContent`, opts.apiKey);
-  const headers = buildVertexHeaders(opts.apiKey);
+  const url = buildVertexUrl(opts.projectId, `${opts.model}:generateContent`);
+  const headers = buildBearerHeaders(opts.accessToken);
   const response = await fetch(url, {
     method: "POST",
     headers,
@@ -227,18 +233,19 @@ function extractImageResponse(responses: GeminiResponse[]): {
   return { newImageBase64, newImageMimeType, textResponse: textResponse || null };
 }
 
+// ── Exported API functions ──
+
 export async function geminiGenerateImageFromText(opts: {
-  apiKey: string;
-  baseUrl?: string;
+  accessToken: string;
+  projectId: string;
   prompt: string;
   imageModel?: string;
   imageConfig?: ImageConfig;
 }): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
-  const baseUrl = opts.baseUrl || DEFAULT_BASE_URL;
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
   return extractImageResponse(await requestImageGeneration({
-    apiKey: opts.apiKey,
-    baseUrl,
+    accessToken: opts.accessToken,
+    projectId: opts.projectId,
     model,
     parts: [{ text: opts.prompt }],
     imageConfig: opts.imageConfig,
@@ -246,15 +253,14 @@ export async function geminiGenerateImageFromText(opts: {
 }
 
 export async function geminiEditImage(opts: {
-  apiKey: string;
-  baseUrl?: string;
+  accessToken: string;
+  projectId: string;
   prompt: string;
   images: ImageInputBase64[];
   mask?: ImageInputBase64;
   imageModel?: string;
   imageConfig?: ImageConfig;
 }): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
-  const baseUrl = opts.baseUrl || DEFAULT_BASE_URL;
   const imageParts: GeminiPart[] = opts.images.map((img) => ({
     inlineData: { data: img.base64, mimeType: img.mimeType },
   }));
@@ -265,8 +271,8 @@ export async function geminiEditImage(opts: {
 
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
   return extractImageResponse(await requestImageGeneration({
-    apiKey: opts.apiKey,
-    baseUrl,
+    accessToken: opts.accessToken,
+    projectId: opts.projectId,
     model,
     parts,
     imageConfig: opts.imageConfig,
@@ -274,13 +280,12 @@ export async function geminiEditImage(opts: {
 }
 
 export async function geminiVideoStart(opts: {
-  apiKey: string;
-  baseUrl?: string;
+  accessToken: string;
+  projectId: string;
   prompt: string;
   aspectRatio: "16:9" | "9:16";
   image?: ImageInputBase64;
 }): Promise<{ operationName: string }> {
-  const baseUrl = opts.baseUrl || DEFAULT_BASE_URL;
   const instance: Record<string, unknown> = { prompt: opts.prompt };
   if (opts.image) {
     instance.image = {
@@ -289,17 +294,15 @@ export async function geminiVideoStart(opts: {
     };
   }
 
-  const response = await fetch(
-    buildVertexUrl(baseUrl, `v1/publishers/google/models/${VIDEO_MODEL}:predictLongRunning`, opts.apiKey),
-    {
-      method: "POST",
-      headers: buildVertexHeaders(opts.apiKey),
-      body: JSON.stringify({
-        instances: [instance],
-        parameters: { aspectRatio: opts.aspectRatio, sampleCount: 1 },
-      }),
-    }
-  );
+  const url = buildVertexUrl(opts.projectId, `${VIDEO_MODEL}:predictLongRunning`);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: buildBearerHeaders(opts.accessToken),
+    body: JSON.stringify({
+      instances: [instance],
+      parameters: { aspectRatio: opts.aspectRatio, sampleCount: 1 },
+    }),
+  });
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -313,26 +316,21 @@ export async function geminiVideoStart(opts: {
 }
 
 export async function geminiVideoStatus(opts: {
-  apiKey: string;
-  baseUrl?: string;
+  accessToken: string;
+  projectId: string;
   operationName: string;
 }): Promise<VideoOperationResponse> {
-  const baseUrl = opts.baseUrl || DEFAULT_BASE_URL;
-  const response = await fetch(
-    buildVertexUrl(baseUrl, `v1/publishers/google/models/${VIDEO_MODEL}:fetchPredictOperation`, opts.apiKey),
-    {
-      method: "POST",
-      headers: buildVertexHeaders(opts.apiKey),
-      body: JSON.stringify({
-        operationName: opts.operationName,
-      }),
-    }
-  );
+  const url = buildVertexUrl(opts.projectId, `${VIDEO_MODEL}:fetchPredictOperation`);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: buildBearerHeaders(opts.accessToken),
+    body: JSON.stringify({
+      operationName: opts.operationName,
+    }),
+  });
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to check Vertex video status: ${response.status} ${response.statusText} - ${errorText}`);
   }
   return (await response.json()) as VideoOperationResponse;
 }
-
-

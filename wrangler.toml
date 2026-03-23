@@ -21,14 +21,6 @@ d1_databases = [
   { binding = "DB", database_name = "bananapod", database_id = "da4ec39e-14d7-4934-9b7a-0f9aee64e7ce", migrations_dir = "worker/migrations" }
 ]
 
-# Secrets:
-# - GEMINI_API_KEY (set via: wrangler secret put GEMINI_API_KEY)
-
-# Optional:
-# - BASE_URL (default is https://generativelanguage.googleapis.com)
-# - BASE_URL (default is https://aiplatform.googleapis.com)
-# - BASE_URL (default is https://vertex.lordorange.top)
-[vars]
-BASE_URL = "https://aiplatform.googleapis.com"
-
+# Secrets (set via: wrangler secret put GCP_SERVICE_ACCOUNT_KEY)
+# - GCP_SERVICE_ACCOUNT_KEY: the full JSON content of a GCP service account key file
 
