@@ -423,6 +423,7 @@ const App: React.FC = () => {
     const [imageSize, setImageSize] = useState<ImageSize>('1K');
     const [imageModel, setImageModel] = useState<string>('gemini-3.1-flash-image-preview');
     const [imageCount, setImageCount] = useState<number>(2);
+    const [parallelGeneration, setParallelGeneration] = useState<boolean>(false);
     const [progressMessage, setProgressMessage] = useState<string>('');
     const [clipboardCopyState, setClipboardCopyState] = useState<{ status: 'copying' | 'success'; elementId: string } | null>(null);
 
@@ -492,6 +493,7 @@ const App: React.FC = () => {
                     if (savedSettings.imageSize) setImageSize(savedSettings.imageSize);
                     if ((savedSettings as any).imageModel) setImageModel((savedSettings as any).imageModel);
                     if (typeof (savedSettings as any).imageCount === 'number') setImageCount((savedSettings as any).imageCount);
+                    if (typeof (savedSettings as any).parallelGeneration === 'boolean') setParallelGeneration((savedSettings as any).parallelGeneration);
                 }
             } catch (err) {
                 console.error('Failed to load data from IndexedDB:', err);
@@ -558,6 +560,7 @@ const App: React.FC = () => {
                 imageSize,
                 imageModel,
                 imageCount,
+                parallelGeneration,
             };
             debouncedSaveSettings(settings);
         }
@@ -576,6 +579,7 @@ const App: React.FC = () => {
         imageSize,
         imageModel,
         imageCount,
+        parallelGeneration,
     ]);
 
     const handleAddUserEffect = useCallback((effect: UserEffect) => {
@@ -1915,25 +1919,44 @@ const App: React.FC = () => {
                             scheduleImageSizeUpdateById(id, mediaUrl);
                         };
 
-                        const tasks = Array.from({ length: imageCount }, async () => {
-                            try {
-                                const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
-                                if (!one.ok || one.items.length === 0) {
-                                    if (!one.ok && 'textResponse' in one) {
-                                        lastTextResponse = one.textResponse ?? lastTextResponse;
+                        if (parallelGeneration) {
+                            const tasks = Array.from({ length: imageCount }, async () => {
+                                try {
+                                    const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
+                                    if (!one.ok || one.items.length === 0) {
+                                        if (!one.ok && 'textResponse' in one) {
+                                            lastTextResponse = one.textResponse ?? lastTextResponse;
+                                        }
+                                        return;
                                     }
-                                    return;
+                                    const it = one.items[0];
+                                    produced += 1;
+                                    setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                                    placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
+                                } catch (e) {
+                                    lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                                 }
-                                const it = one.items[0];
-                                produced += 1;
-                                setProgressMessage(`Generating... ${produced}/${imageCount}`);
-                                placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
-                            } catch (e) {
-                                lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                            });
+                            await Promise.allSettled(tasks);
+                        } else {
+                            for (let i = 0; i < imageCount; i++) {
+                                try {
+                                    setProgressMessage(`Generating... ${produced + 1}/${imageCount}`);
+                                    const one = await editImage(prompt, [imageElementToRef(baseImage)], maskRef, imageConfig, 1);
+                                    if (!one.ok || one.items.length === 0) {
+                                        if (!one.ok && 'textResponse' in one) {
+                                            lastTextResponse = one.textResponse ?? lastTextResponse;
+                                        }
+                                        continue;
+                                    }
+                                    const it = one.items[0];
+                                    produced += 1;
+                                    await placeOne(it.mediaUrl, it.mimeType);
+                                } catch (e) {
+                                    lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                                }
                             }
-                        });
-
-                        await Promise.allSettled(tasks);
+                        }
 
                         const missing = imageCount - produced;
                         for (let i = 0; i < missing; i++) {
@@ -2077,25 +2100,44 @@ const App: React.FC = () => {
                         scheduleImageSizeUpdateById(id, mediaUrl);
                     };
 
-                    const tasks = Array.from({ length: imageCount }, async () => {
-                        try {
-                            const one = await editImage(prompt, refs, undefined, imageConfig, 1);
-                            if (!one.ok || one.items.length === 0) {
-                                if (!one.ok && 'textResponse' in one) {
-                                    lastTextResponse = one.textResponse ?? lastTextResponse;
+                    if (parallelGeneration) {
+                        const tasks = Array.from({ length: imageCount }, async () => {
+                            try {
+                                const one = await editImage(prompt, refs, undefined, imageConfig, 1);
+                                if (!one.ok || one.items.length === 0) {
+                                    if (!one.ok && 'textResponse' in one) {
+                                        lastTextResponse = one.textResponse ?? lastTextResponse;
+                                    }
+                                    return;
                                 }
-                                return;
+                                const it = one.items[0];
+                                produced += 1;
+                                setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                                placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
+                            } catch (e) {
+                                lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                             }
-                            const it = one.items[0];
-                            produced += 1;
-                            setProgressMessage(`Generating... ${produced}/${imageCount}`);
-                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
-                        } catch (e) {
-                            lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                        });
+                        await Promise.allSettled(tasks);
+                    } else {
+                        for (let i = 0; i < imageCount; i++) {
+                            try {
+                                setProgressMessage(`Generating... ${produced + 1}/${imageCount}`);
+                                const one = await editImage(prompt, refs, undefined, imageConfig, 1);
+                                if (!one.ok || one.items.length === 0) {
+                                    if (!one.ok && 'textResponse' in one) {
+                                        lastTextResponse = one.textResponse ?? lastTextResponse;
+                                    }
+                                    continue;
+                                }
+                                const it = one.items[0];
+                                produced += 1;
+                                await placeOne(it.mediaUrl, it.mimeType);
+                            } catch (e) {
+                                lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                            }
                         }
-                    });
-
-                    await Promise.allSettled(tasks);
+                    }
 
                     // If some requests failed (common online due to rate limits), try to fill remaining slots sequentially.
                     const missing = imageCount - produced;
@@ -2215,25 +2257,44 @@ const App: React.FC = () => {
                     }
                 };
 
-                const tasks = Array.from({ length: imageCount }, async () => {
-                    try {
-                        const one = await generateImageFromText(prompt, imageConfig, 1);
-                        if (!one.ok || one.items.length === 0) {
-                            if (!one.ok && 'textResponse' in one) {
-                                lastTextResponse = one.textResponse ?? lastTextResponse;
+                if (parallelGeneration) {
+                    const tasks = Array.from({ length: imageCount }, async () => {
+                        try {
+                            const one = await generateImageFromText(prompt, imageConfig, 1);
+                            if (!one.ok || one.items.length === 0) {
+                                if (!one.ok && 'textResponse' in one) {
+                                    lastTextResponse = one.textResponse ?? lastTextResponse;
+                                }
+                                return;
                             }
-                            return;
+                            const it = one.items[0];
+                            produced += 1;
+                            setProgressMessage(`Generating... ${produced}/${imageCount}`);
+                            placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
+                        } catch (e) {
+                            lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                         }
-                        const it = one.items[0];
-                        produced += 1;
-                        setProgressMessage(`Generating... ${produced}/${imageCount}`);
-                        placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
-                    } catch (e) {
-                        lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                    });
+                    await Promise.allSettled(tasks);
+                } else {
+                    for (let i = 0; i < imageCount; i++) {
+                        try {
+                            setProgressMessage(`Generating... ${produced + 1}/${imageCount}`);
+                            const one = await generateImageFromText(prompt, imageConfig, 1);
+                            if (!one.ok || one.items.length === 0) {
+                                if (!one.ok && 'textResponse' in one) {
+                                    lastTextResponse = one.textResponse ?? lastTextResponse;
+                                }
+                                continue;
+                            }
+                            const it = one.items[0];
+                            produced += 1;
+                            await placeOne(it.mediaUrl, it.mimeType);
+                        } catch (e) {
+                            lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
+                        }
                     }
-                });
-
-                await Promise.allSettled(tasks);
+                }
 
                 const missing = imageCount - produced;
                 for (let i = 0; i < missing; i++) {
@@ -3299,6 +3360,8 @@ const App: React.FC = () => {
                 setImageModel={setImageModel}
                 imageCount={imageCount}
                 setImageCount={setImageCount}
+                parallelGeneration={parallelGeneration}
+                setParallelGeneration={setParallelGeneration}
             />}
         </div>
     );

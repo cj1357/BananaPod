@@ -19,6 +19,7 @@ export interface AppSettings {
   imageSize: ImageSize;
   imageModel: string;
   imageCount: number;
+  parallelGeneration: boolean;
 }
 
 let dbInstance: IDBDatabase | null = null;

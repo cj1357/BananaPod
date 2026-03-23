@@ -25,6 +25,8 @@ interface PromptBarProps {
     setImageModel: (model: string) => void;
     imageCount: number;
     setImageCount: (count: number) => void;
+    parallelGeneration: boolean;
+    setParallelGeneration: (parallel: boolean) => void;
 }
 
 export const PromptBar: React.FC<PromptBarProps> = ({
@@ -50,6 +52,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     setImageModel,
     imageCount,
     setImageCount,
+    parallelGeneration,
+    setParallelGeneration,
 }) => {
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -162,6 +166,26 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                             <option value={4}>4</option>
                             <option value={5}>5</option>
                         </select>
+                        {imageCount > 1 && (
+                            <button
+                                onClick={() => setParallelGeneration(!parallelGeneration)}
+                                title={parallelGeneration ? t('promptBar.parallelMode') : t('promptBar.serialMode')}
+                                className={`p-1.5 rounded-full transition-colors ${parallelGeneration ? 'bg-amber-500/80' : 'bg-black/20 hover:bg-black/30'}`}
+                            >
+                                {parallelGeneration ? (
+                                    /* parallel icon: two arrows side by side */
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M8 5v14" /><path d="m5 8 3-3 3 3" />
+                                        <path d="M16 19V5" /><path d="m13 16 3 3 3-3" />
+                                    </svg>
+                                ) : (
+                                    /* serial icon: single arrow going down step by step */
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
+                                    </svg>
+                                )}
+                            </button>
+                        )}
                     </div>
                 )}
                 <QuickPrompts

@@ -57,6 +57,47 @@ function buildBearerHeaders(accessToken: string): HeadersInit {
   };
 }
 
+// ── Retry with exponential backoff (for 429 / 503) ──
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 2000; // 2s → 4s → 8s
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(input, init);
+
+    // Only retry on 429 (rate limit) or 503 (overloaded)
+    if (response.status !== 429 && response.status !== 503) {
+      return response;
+    }
+
+    lastResponse = response;
+
+    if (attempt < MAX_RETRIES) {
+      // Use Retry-After header if provided, otherwise exponential backoff
+      const retryAfter = response.headers.get("Retry-After");
+      let delayMs: number;
+      if (retryAfter && !isNaN(Number(retryAfter))) {
+        delayMs = Number(retryAfter) * 1000;
+      } else {
+        delayMs = BASE_DELAY_MS * Math.pow(2, attempt);
+      }
+      // Add jitter (±25%)
+      delayMs = delayMs * (0.75 + Math.random() * 0.5);
+      console.log(`[Vertex AI] ${response.status} rate limited, retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delayMs)}ms`);
+      await sleep(delayMs);
+    }
+  }
+
+  return lastResponse!;
+}
+
 // ── Request body builders ──
 
 function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig): string {
@@ -180,7 +221,7 @@ async function requestImageGeneration(opts: {
 }): Promise<GeminiResponse[]> {
   const url = buildVertexUrl(opts.projectId, `${opts.model}:generateContent`);
   const headers = buildBearerHeaders(opts.accessToken);
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: "POST",
     headers,
     body: buildImageGenerationBody(opts.parts, opts.imageConfig),
@@ -295,7 +336,7 @@ export async function geminiVideoStart(opts: {
   }
 
   const url = buildVertexUrl(opts.projectId, `${VIDEO_MODEL}:predictLongRunning`);
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: "POST",
     headers: buildBearerHeaders(opts.accessToken),
     body: JSON.stringify({
@@ -321,7 +362,7 @@ export async function geminiVideoStatus(opts: {
   operationName: string;
 }): Promise<VideoOperationResponse> {
   const url = buildVertexUrl(opts.projectId, `${VIDEO_MODEL}:fetchPredictOperation`);
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: "POST",
     headers: buildBearerHeaders(opts.accessToken),
     body: JSON.stringify({
