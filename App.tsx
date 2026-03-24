@@ -1691,7 +1691,9 @@ const App: React.FC = () => {
 
         if (generationMode === 'video') {
             try {
-                const selectedElements = elements.filter(el => selectedElementIds.includes(el.id));
+                const selectedElements = selectedElementIds
+                    .map(id => elements.find(el => el.id === id))
+                    .filter((el): el is Element => el !== undefined);
                 const imageElement = selectedElements.find(el => el.type === 'image') as ImageElement | undefined;
 
                 if (selectedElementIds.length > 1 || (selectedElementIds.length === 1 && !imageElement)) {
@@ -1867,7 +1869,9 @@ const App: React.FC = () => {
             };
 
             if (isEditing) {
-                const selectedElements = elements.filter(el => selectedElementIds.includes(el.id));
+                const selectedElements = selectedElementIds
+                    .map(id => elements.find(el => el.id === id))
+                    .filter((el): el is Element => el !== undefined);
                 const imageElements = selectedElements.filter(el => el.type === 'image') as ImageElement[];
                 const maskPaths = selectedElements.filter(el => el.type === 'path' && el.strokeOpacity && el.strokeOpacity < 1) as PathElement[];
 
