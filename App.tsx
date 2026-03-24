@@ -1389,7 +1389,8 @@ const App: React.FC = () => {
         dragStartElementPositions.current.clear();
     };
 
-    const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    const handleWheelRef = useRef<(e: WheelEvent) => void>();
+    handleWheelRef.current = (e: WheelEvent) => {
         if (croppingState || editingElement) { e.preventDefault(); return; }
         e.preventDefault();
         const { clientX, clientY, deltaX, deltaY, ctrlKey } = e;
@@ -1410,6 +1411,16 @@ const App: React.FC = () => {
             updateActiveBoard(b => ({ ...b, panOffset: { x: b.panOffset.x - deltaX, y: b.panOffset.y - deltaY } }));
         }
     };
+
+    useEffect(() => {
+        const svg = svgRef.current;
+        if (!svg) return;
+        const onWheel = (e: WheelEvent) => {
+            if (handleWheelRef.current) handleWheelRef.current(e);
+        };
+        svg.addEventListener('wheel', onWheel, { passive: false });
+        return () => svg.removeEventListener('wheel', onWheel);
+    }, [isInitializing, isAuthed, isAuthChecking]);
 
     const handleDeleteElement = (id: string) => {
         commitAction(prev => {
@@ -2947,7 +2958,6 @@ const App: React.FC = () => {
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
-                    onWheel={handleWheel}
                     onContextMenu={handleContextMenu}
                     style={{ cursor }}
                 >
