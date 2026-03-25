@@ -1696,6 +1696,7 @@ const App: React.FC = () => {
             return;
         }
 
+        console.log(`[Generation] Button clicked. Mode: ${generationMode}, ImageCount: ${imageCount}, Parallel: ${parallelGeneration}`);
         setIsLoading(true);
         setError(null);
         setProgressMessage('Starting generation...');
@@ -2362,12 +2363,15 @@ const App: React.FC = () => {
                 return;
             }
 
+            console.log(`[Generation] Starting generation for ${imageCount} image`);
             const result = await generateImageFromText(prompt, imageConfig, imageCount);
             if (!result.ok) {
+                console.error(`[Generation] Task failed:`, result);
                 setError(('textResponse' in result && result.textResponse) ? result.textResponse : 'Generation failed to produce an image.');
                 setIsLoading(false);
                 return;
             }
+            console.log(`[Generation] Task succeeded. Generated ${result.items.length} images.`);
             if (!svgRef.current) {
                 setIsLoading(false);
                 return;

@@ -59,8 +59,8 @@ function buildBearerHeaders(accessToken: string): HeadersInit {
 
 // ── Retry with exponential backoff (for 429 / 503) ──
 
-const MAX_RETRIES = 5;
-const BASE_DELAY_MS = 2000; // 2s → 4s → 8s → 16s → 32s
+const MAX_RETRIES = 4; // Caps total waits at 2s+4s+8s+16s = ~30s, avoiding CF 524 (100s timeout)
+const BASE_DELAY_MS = 2000; // 2s → 4s → 8s → 16s
 const MAX_DELAY_MS = 32000; // 32s cap
 
 function sleep(ms: number): Promise<void> {
