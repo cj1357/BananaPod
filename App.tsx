@@ -2273,10 +2273,13 @@ const App: React.FC = () => {
                 };
 
                 if (parallelGeneration) {
-                    const tasks = Array.from({ length: imageCount }, async () => {
+                    console.log(`[Generation] Starting parallel generation for ${imageCount} images`);
+                    const tasks = Array.from({ length: imageCount }, async (_, i) => {
                         try {
+                            console.log(`[Generation] Parallel task ${i + 1} started`);
                             const one = await generateImageFromText(prompt, imageConfig, 1);
                             if (!one.ok || one.items.length === 0) {
+                                console.error(`[Generation] Parallel task ${i + 1} failed:`, one);
                                 if (!one.ok && 'textResponse' in one) {
                                     lastTextResponse = one.textResponse ?? lastTextResponse;
                                 }
@@ -2284,19 +2287,24 @@ const App: React.FC = () => {
                             }
                             const it = one.items[0];
                             produced += 1;
+                            console.log(`[Generation] Parallel task ${i + 1} succeeded. Total produced: ${produced}/${imageCount}`);
                             setProgressMessage(`Generating... ${produced}/${imageCount}`);
                             placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType));
                         } catch (e) {
+                            console.error(`[Generation] Parallel task ${i + 1} threw an error:`, e);
                             lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                         }
                     });
                     await Promise.allSettled(tasks);
                 } else {
+                    console.log(`[Generation] Starting sequential generation for ${imageCount} images`);
                     for (let i = 0; i < imageCount; i++) {
                         try {
+                            console.log(`[Generation] Sequential task ${i + 1} started`);
                             setProgressMessage(`Generating... ${produced + 1}/${imageCount}`);
                             const one = await generateImageFromText(prompt, imageConfig, 1);
                             if (!one.ok || one.items.length === 0) {
+                                console.error(`[Generation] Sequential task ${i + 1} failed:`, one);
                                 if (!one.ok && 'textResponse' in one) {
                                     lastTextResponse = one.textResponse ?? lastTextResponse;
                                 }
@@ -2304,19 +2312,28 @@ const App: React.FC = () => {
                             }
                             const it = one.items[0];
                             produced += 1;
+                            console.log(`[Generation] Sequential task ${i + 1} succeeded. Total produced: ${produced}/${imageCount}`);
                             await placeOne(it.mediaUrl, it.mimeType);
                         } catch (e) {
+                            console.error(`[Generation] Sequential task ${i + 1} threw an error:`, e);
                             lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                         }
                     }
                 }
 
                 const missing = imageCount - produced;
+                if (missing > 0) {
+                    console.warn(`[Generation] Missing ${missing} images. Starting retry loop...`);
+                } else {
+                    console.log(`[Generation] All ${imageCount} images generated successfully without retries.`);
+                }
                 for (let i = 0; i < missing; i++) {
                     try {
+                        console.log(`[Generation] Retry task ${i + 1}/${missing} started`);
                         setProgressMessage(`Retry... ${produced + 1}/${imageCount}`);
                         const one = await generateImageFromText(prompt, imageConfig, 1);
                         if (!one.ok || one.items.length === 0) {
+                            console.error(`[Generation] Retry task ${i + 1} failed:`, one);
                             if (!one.ok && 'textResponse' in one) {
                                 lastTextResponse = one.textResponse ?? lastTextResponse;
                             }
@@ -2324,8 +2341,10 @@ const App: React.FC = () => {
                         }
                         const it = one.items[0];
                         produced += 1;
+                        console.log(`[Generation] Retry task ${i + 1} succeeded. Total produced: ${produced}/${imageCount}`);
                         placeChain = placeChain.then(() => placeOne(it.mediaUrl, it.mimeType)).catch(() => { });
                     } catch (e) {
+                        console.error(`[Generation] Retry task ${i + 1} threw an error:`, e);
                         lastTextResponse = e instanceof Error ? e.message : (lastTextResponse ?? null);
                     }
                 }

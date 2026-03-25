@@ -2,6 +2,7 @@ name = "bananapod-vertex"
 main = "worker/src/index.ts"
 compatibility_date = "2025-12-13"
 
+
 # Serve the Vite build output from the same Worker (Workers + Assets).
 assets = { directory = "./dist", binding = "ASSETS" }
 
@@ -24,3 +25,8 @@ d1_databases = [
 # Secrets (set via: wrangler secret put GCP_SERVICE_ACCOUNT_KEY)
 # - GCP_SERVICE_ACCOUNT_KEY: the full JSON content of a GCP service account key file
 
+[observability]
+enabled = true
+[observability.logs]
+enabled = true
+invocation_logs = true

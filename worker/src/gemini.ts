@@ -59,8 +59,9 @@ function buildBearerHeaders(accessToken: string): HeadersInit {
 
 // ── Retry with exponential backoff (for 429 / 503) ──
 
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 2000; // 2s → 4s → 8s
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 2000; // 2s → 4s → 8s → 16s → 32s
+const MAX_DELAY_MS = 32000; // 32s cap
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -86,7 +87,7 @@ async function fetchWithRetry(input: RequestInfo, init?: RequestInit): Promise<R
       if (retryAfter && !isNaN(Number(retryAfter))) {
         delayMs = Number(retryAfter) * 1000;
       } else {
-        delayMs = BASE_DELAY_MS * Math.pow(2, attempt);
+        delayMs = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
       }
       // Add jitter (±25%)
       delayMs = delayMs * (0.75 + Math.random() * 0.5);
