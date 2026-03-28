@@ -17,11 +17,11 @@ export type ImageInputBase64 = {
 type GeminiPart =
   | { text: string }
   | {
-      inlineData: {
-        mimeType: string;
-        data: string;
-      };
+    inlineData: {
+      mimeType: string;
+      data: string;
     };
+  };
 
 type GeminiResponse = {
   candidates?: Array<{
@@ -318,6 +318,52 @@ export async function geminiEditImage(opts: {
     parts,
     imageConfig: opts.imageConfig,
   }));
+}
+
+export async function geminiAnalyzeImage(opts: {
+  accessToken: string;
+  projectId: string;
+  prompt: string;
+  image: ImageInputBase64;
+  imageModel?: string;
+}): Promise<{ textResponse: string }> {
+  const model = opts.imageModel || "gemini-3.1-pro-preview";
+  const url = buildVertexUrl(opts.projectId, `${model}:generateContent`);
+  const headers = buildBearerHeaders(opts.accessToken);
+
+  const body = JSON.stringify({
+    contents: [{
+      role: "user",
+      parts: [
+        { inlineData: { data: opts.image.base64, mimeType: opts.image.mimeType } },
+        { text: opts.prompt },
+      ],
+    }],
+    generationConfig: {
+      temperature: 0.4,
+      maxOutputTokens: 4096,
+      responseModalities: ["TEXT"],
+    },
+    safetySettings: [
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+    ],
+  });
+
+  const response = await fetchWithRetry(url, { method: "POST", headers, body });
+  const responses = await parseGenerateContentResponse(response);
+
+  const textParts: string[] = [];
+  for (const r of responses) {
+    if (r.error?.message) throw new Error(r.error.message);
+    for (const part of r.candidates?.[0]?.content?.parts ?? []) {
+      if (part.text) textParts.push(part.text);
+    }
+  }
+
+  return { textResponse: textParts.join("\n").trim() || "Unable to analyze the image." };
 }
 
 export async function geminiVideoStart(opts: {

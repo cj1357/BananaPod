@@ -15,7 +15,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { AuthGate, getStoredUserKey, clearStoredUserKey } from './components/AuthGate';
 import { OutpaintModal } from './components/OutpaintModal';
 import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, TextElement, ArrowElement, UserEffect, LineElement, WheelAction, GroupElement, Board, VideoElement, ImageAspectRatio, ImageSize } from './types';
-import { authCheck, editImage, editImageStream, generateImageFromText, videoStart, videoStatus, type ClientImageRef, type GenerateImageItem, type HistoryItem } from './services/apiService';
+import { authCheck, editImage, editImageStream, analyzeImage, generateImageFromText, videoStart, videoStatus, type ClientImageRef, type GenerateImageItem, type HistoryItem } from './services/apiService';
 import { fileToDataUrl, loadImageWithTimeout } from './utils/fileUtils';
 import { translations } from './translations';
 import { loadBoards, loadSettings, debouncedSaveBoards, debouncedSaveSettings, clearAllData, requestPersistentStorage, getStorageInfo, type AppSettings } from './services/storageService';
@@ -428,6 +428,7 @@ const App: React.FC = () => {
     const [progressMessage, setProgressMessage] = useState<string>('');
     const [clipboardCopyState, setClipboardCopyState] = useState<{ status: 'copying' | 'success'; elementId: string } | null>(null);
     const [outpaintTarget, setOutpaintTarget] = useState<ImageElement | null>(null);
+    const [analyzingImageId, setAnalyzingImageId] = useState<string | null>(null);
 
     // API Configuration
     // (Moved to Worker; no client-side API key)
@@ -3195,7 +3196,7 @@ const App: React.FC = () => {
                                 }
                                 if (element.type === 'text') toolbarScreenWidth = 220;
                                 if (element.type === 'arrow' || element.type === 'line') toolbarScreenWidth = 220;
-                                if (element.type === 'image') toolbarScreenWidth = 442;
+                                if (element.type === 'image') toolbarScreenWidth = 490;
                                 if (element.type === 'video') toolbarScreenWidth = 160;
                                 if (element.type === 'group') toolbarScreenWidth = 80;
 
@@ -3218,6 +3219,7 @@ const App: React.FC = () => {
                                         {element.type === 'video' && <a title={t('contextMenu.download')} href={element.href} download={`video-${element.id}.mp4`} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></a>}
                                         {element.type === 'image' && <button title={t('contextMenu.crop')} onClick={() => handleStartCrop(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path></svg></button>}
                                         {element.type === 'image' && <button title={language === 'zho' ? '扩图' : 'Outpaint'} onClick={() => setOutpaintTarget(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center" style={{ fontSize: 16 }}>🔲</button>}
+                                        {element.type === 'image' && <button title={language === 'zho' ? '提取提示词' : 'Extract Prompt'} disabled={analyzingImageId === element.id} onClick={async () => { try { setAnalyzingImageId(element.id); const ref: ClientImageRef = element.href.startsWith('data:') ? { kind: 'dataUrl', dataUrl: element.href, mimeType: element.mimeType || 'image/png' } : { kind: 'mediaId', mediaId: element.href.replace('/api/media/', '') }; const text = await analyzeImage(ref); setPrompt(text); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setAnalyzingImageId(null); } }} className={`p-2 rounded flex items-center justify-center ${analyzingImageId === element.id ? 'bg-amber-100 text-amber-700 cursor-wait' : 'hover:bg-gray-100'}`}>{analyzingImageId === element.id ? <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path><path d="M11 8v6"></path><path d="M8 11h6"></path></svg>}</button>}
                                         {element.type === 'image' && (
                                             <>
                                                 <div className="h-6 w-px bg-gray-200"></div>

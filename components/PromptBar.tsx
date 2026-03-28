@@ -202,7 +202,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                     onChange={(e) => setPrompt(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder={getPlaceholderText()}
-                    className="flex-grow bg-transparent text-white placeholder-neutral-400 focus:outline-none px-2 resize-none overflow-hidden max-h-32"
+                    className="flex-grow bg-transparent text-white placeholder-neutral-400 focus:outline-none px-2 resize-none overflow-y-auto max-h-32 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                     disabled={isLoading}
                 />
                 {prompt.trim() && !isLoading && (

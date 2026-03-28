@@ -191,6 +191,17 @@ export async function editImage(
   return (await res.json()) as GenerateImageResult;
 }
 
+export async function analyzeImage(image: ClientImageRef): Promise<string> {
+  const res = await fetch("/api/analyze-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image }),
+  });
+  if (!res.ok) throw new Error(await readApiErrorMessage(res));
+  const data = (await res.json()) as { ok: boolean; text: string };
+  return data.text;
+}
+
 export async function videoStart(prompt: string, aspectRatio: "16:9" | "9:16", image?: ClientImageRef): Promise<{ operationName: string }> {
   const res = await fetch("/api/video/start", {
     method: "POST",
