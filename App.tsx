@@ -13,8 +13,9 @@ import { LayerPanel } from './components/LayerPanel';
 import { BoardPanel } from './components/BoardPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { AuthGate, getStoredUserKey, clearStoredUserKey } from './components/AuthGate';
+import { OutpaintModal } from './components/OutpaintModal';
 import type { Tool, Point, Element, ImageElement, PathElement, ShapeElement, TextElement, ArrowElement, UserEffect, LineElement, WheelAction, GroupElement, Board, VideoElement, ImageAspectRatio, ImageSize } from './types';
-import { authCheck, editImage, generateImageFromText, videoStart, videoStatus, type ClientImageRef, type HistoryItem } from './services/apiService';
+import { authCheck, editImage, editImageStream, generateImageFromText, videoStart, videoStatus, type ClientImageRef, type GenerateImageItem, type HistoryItem } from './services/apiService';
 import { fileToDataUrl, loadImageWithTimeout } from './utils/fileUtils';
 import { translations } from './translations';
 import { loadBoards, loadSettings, debouncedSaveBoards, debouncedSaveSettings, clearAllData, requestPersistentStorage, getStorageInfo, type AppSettings } from './services/storageService';
@@ -426,6 +427,7 @@ const App: React.FC = () => {
     const [parallelGeneration, setParallelGeneration] = useState<boolean>(false);
     const [progressMessage, setProgressMessage] = useState<string>('');
     const [clipboardCopyState, setClipboardCopyState] = useState<{ status: 'copying' | 'success'; elementId: string } | null>(null);
+    const [outpaintTarget, setOutpaintTarget] = useState<ImageElement | null>(null);
 
     // API Configuration
     // (Moved to Worker; no client-side API key)
@@ -2850,6 +2852,37 @@ const App: React.FC = () => {
     return (
         <div className="w-screen h-screen flex flex-col font-sans" style={{ backgroundColor: canvasBackgroundColor }} onDragOver={handleDragOver} onDrop={handleDrop}>
             {isLoading && <Loader progressMessage={progressMessage} />}
+            {outpaintTarget && (
+                <OutpaintModal
+                    image={outpaintTarget}
+                    imageModel={imageModel}
+                    imageSize={imageSize}
+                    language={language}
+                    onClose={() => setOutpaintTarget(null)}
+                    onGenerated={(items, expand) => {
+                        setOutpaintTarget(null);
+                        if (items.length === 0) return;
+                        const src = outpaintTarget;
+                        const newW = src.width + expand.left + expand.right;
+                        const newH = src.height + expand.top + expand.bottom;
+                        // Position new image at same canvas location as the expanded canvas origin
+                        const newX = src.x - expand.left;
+                        const newY = src.y - expand.top;
+                        const newElements = items.map((item) => ({
+                            id: generateId(),
+                            type: 'image' as const,
+                            href: item.mediaUrl,
+                            x: newX,
+                            y: newY,
+                            width: newW,
+                            height: newH,
+                            mimeType: item.mimeType,
+                            sizeStatus: 'placeholder' as const,
+                        }));
+                        commitAction(prev => [...prev, ...newElements]);
+                    }}
+                />
+            )}
             {clipboardCopyState && (
                 <div className={`absolute top-4 right-4 z-50 px-4 py-2 rounded-md shadow-lg border text-sm ${clipboardCopyState.status === 'copying'
                     ? 'bg-amber-100 border-amber-300 text-amber-800'
@@ -3162,7 +3195,7 @@ const App: React.FC = () => {
                                 }
                                 if (element.type === 'text') toolbarScreenWidth = 220;
                                 if (element.type === 'arrow' || element.type === 'line') toolbarScreenWidth = 220;
-                                if (element.type === 'image') toolbarScreenWidth = 390;
+                                if (element.type === 'image') toolbarScreenWidth = 442;
                                 if (element.type === 'video') toolbarScreenWidth = 160;
                                 if (element.type === 'group') toolbarScreenWidth = 80;
 
@@ -3184,6 +3217,7 @@ const App: React.FC = () => {
                                         {element.type === 'image' && <button title={t('contextMenu.download')} onClick={() => handleDownloadImage(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>}
                                         {element.type === 'video' && <a title={t('contextMenu.download')} href={element.href} download={`video-${element.id}.mp4`} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></a>}
                                         {element.type === 'image' && <button title={t('contextMenu.crop')} onClick={() => handleStartCrop(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path></svg></button>}
+                                        {element.type === 'image' && <button title={language === 'zho' ? '扩图' : 'Outpaint'} onClick={() => setOutpaintTarget(element)} className="p-2 rounded hover:bg-gray-100 flex items-center justify-center" style={{ fontSize: 16 }}>🔲</button>}
                                         {element.type === 'image' && (
                                             <>
                                                 <div className="h-6 w-px bg-gray-200"></div>
