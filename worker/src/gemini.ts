@@ -142,53 +142,6 @@ function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig
   return JSON.stringify(body);
 }
 
-// ── Response parsing ──
-
-function splitTopLevelJsonObjects(rawText: string): string[] {
-  const objects: string[] = [];
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < rawText.length; i++) {
-    const ch = rawText[i];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (ch === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (ch === "\"") {
-      inString = !inString;
-      continue;
-    }
-
-    if (inString) continue;
-
-    if (ch === "{") {
-      if (depth === 0) start = i;
-      depth++;
-      continue;
-    }
-
-    if (ch === "}") {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        objects.push(rawText.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-
-  return objects;
-}
-
 async function parseGenerateContentResponse(response: Response): Promise<GeminiResponse[]> {
   const rawText = await response.text();
   if (!response.ok) {
@@ -202,11 +155,15 @@ async function parseGenerateContentResponse(response: Response): Promise<GeminiR
     const parsed = JSON.parse(trimmed) as GeminiResponse | GeminiResponse[];
     return Array.isArray(parsed) ? parsed : [parsed];
   } catch {
-    const chunks = splitTopLevelJsonObjects(trimmed);
-    if (chunks.length > 0) {
-      return chunks.map((chunk) => JSON.parse(chunk) as GeminiResponse);
+    try {
+      // Fast path for valid NDJSON or concatenated JSON objects (often returned un-streamed by Vertex if chunked)
+      // We replace `}\n{` boundaries with `},{` and wrap the whole thing in an array bracket to form a valid JSON array.
+      const normalized = `[${trimmed.replace(/}\s*\n\s*(?=\{)/g, "},")}]`;
+      const parsed = JSON.parse(normalized) as GeminiResponse[];
+      return parsed;
+    } catch {
+      throw new Error(`Unable to parse Vertex generateContent response: ${trimmed.slice(0, 1000)}`);
     }
-    throw new Error(`Unable to parse Vertex generateContent response: ${trimmed.slice(0, 1000)}`);
   }
 }
 

@@ -1,6 +1,7 @@
 name = "bananapod-vertex"
 main = "worker/src/index.ts"
 compatibility_date = "2025-12-13"
+compatibility_flags = [ "nodejs_compat" ]
 
 # Serve the Vite build output from the same Worker (Workers + Assets).
 assets = { directory = "./dist", binding = "ASSETS" }
