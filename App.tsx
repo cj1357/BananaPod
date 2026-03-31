@@ -3026,9 +3026,33 @@ const App: React.FC = () => {
                             let selectionComponent = null;
 
                             if (isSelected && !croppingState) {
+                                let badgeComponent = null;
+                                if (el.type === 'image') {
+                                    const selectedImages = selectedElementIds.map(id => elements.find(e => e.id === id)).filter(e => e?.type === 'image');
+                                    const sequenceIndex = selectedImages.findIndex(img => img?.id === el.id) + 1;
+                                    if (sequenceIndex > 0) {
+                                        const badgeSize = 24 / zoom;
+                                        const badgeMargin = 4 / zoom;
+                                        const fontSize = 14 / zoom;
+                                        const bounds = getElementBounds(el, elements);
+                                        
+                                        badgeComponent = (
+                                            <g transform={`translate(${bounds.x + bounds.width - badgeSize - badgeMargin}, ${bounds.y + badgeMargin})`}>
+                                                <circle cx={badgeSize / 2} cy={badgeSize / 2} r={badgeSize / 2} fill="white" stroke="rgba(0,0,0,0.1)" strokeWidth={1 / zoom} />
+                                                <text x={badgeSize / 2} y={badgeSize / 2} fill="black" fontSize={fontSize} fontWeight="bold" textAnchor="middle" dominantBaseline="central" style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'sans-serif' }}>
+                                                    {sequenceIndex}
+                                                </text>
+                                            </g>
+                                        );
+                                    }
+                                }
+
                                 if (selectedElementIds.length > 1 || el.type === 'path' || el.type === 'arrow' || el.type === 'line' || el.type === 'group') {
                                     const bounds = getElementBounds(el, elements);
-                                    selectionComponent = <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} pointerEvents="none" />
+                                    selectionComponent = <g>
+                                        <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} pointerEvents="none" />
+                                        {badgeComponent}
+                                    </g>;
                                 } else if ((el.type === 'image' || el.type === 'shape' || el.type === 'text' || el.type === 'video')) {
                                     const handleSize = 8 / zoom;
                                     const handles = [
@@ -3039,6 +3063,7 @@ const App: React.FC = () => {
                                     selectionComponent = <g>
                                         <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / zoom} pointerEvents="none" />
                                         {handles.map(h => <rect key={h.name} data-handle={h.name} x={h.x - handleSize / 2} y={h.y - handleSize / 2} width={handleSize} height={handleSize} fill="white" stroke="#3b82f6" strokeWidth={1 / zoom} style={{ cursor: h.cursor }} />)}
+                                        {badgeComponent}
                                     </g>;
                                 }
                             }
