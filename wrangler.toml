@@ -23,5 +23,5 @@ d1_databases = [
 ]
 
 # Secrets (set via: wrangler secret put GCP_SERVICE_ACCOUNT_KEY)
-# - GCP_SERVICE_ACCOUNT_KEY: the full JSON content of a GCP service account key file, or a JSON array of multiple service account key objects for rotation.
-# - GCP_SERVICE_ACCOUNT_KEY_1, GCP_SERVICE_ACCOUNT_KEY_2, ... : to support multiple keys exceeding the 5KB limit, you can store additional keys (or arrays of keys) in these variables.
+# - GCP_SERVICE_ACCOUNT_KEY: the full JSON content of a GCP service account key file
+

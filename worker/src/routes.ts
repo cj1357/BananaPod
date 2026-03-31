@@ -3,7 +3,7 @@ import { createSession, destroySession, isAllowedUserKey, requireAuth } from "./
 import { decodeBase64ToUint8Array, encodeUint8ArrayToBase64 } from "./crypto";
 import { deleteHistoryById, getHistoryById, insertHistory, listHistory } from "./db";
 import { geminiEditImage, geminiGenerateImageFromText, geminiAnalyzeImage, geminiVideoStart, geminiVideoStatus, type ImageConfig, type ImageInputBase64 } from "./gemini";
-import { createGcpAuthPool } from "./gcp-auth";
+import { getAccessToken, getProjectId } from "./gcp-auth";
 
 export type Env = {
   USERS_KV: KVNamespace;
@@ -71,16 +71,9 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
   const auth = await requireAuth(request, env.USERS_KV, env.DB);
   if (!auth) return errorJson(401, "Unauthorized");
 
-  // Collect all GCP_SERVICE_ACCOUNT_KEY* vars to bypass 5KB limit
-  const gcpKeys: string[] = [];
-  if (env.GCP_SERVICE_ACCOUNT_KEY) gcpKeys.push(env.GCP_SERVICE_ACCOUNT_KEY);
-  for (let i = 1; i <= 10; i++) {
-    const k = (env as any)[`GCP_SERVICE_ACCOUNT_KEY_${i}`];
-    if (k) gcpKeys.push(k);
-  }
-
-  // Get GCP Auth pool for Vertex AI calls
-  const gcpAuth = createGcpAuthPool(gcpKeys);
+  // Get GCP access token + project ID for Vertex AI calls
+  const accessToken = await getAccessToken(env.GCP_SERVICE_ACCOUNT_KEY);
+  const projectId = getProjectId(env.GCP_SERVICE_ACCOUNT_KEY);
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
     const { clearSessionCookieHeader } = await destroySession(env.DB, auth.sessionId);
@@ -151,7 +144,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
                 const result =
                   action === "edit"
                     ? await geminiEditImage({
-                      gcpAuth,
+                      accessToken,
+                      projectId,
                       prompt,
                       imageModel: body?.imageModel,
                       images: base64Images!,
@@ -159,7 +153,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
                       imageConfig: body?.imageConfig,
                     })
                     : await geminiGenerateImageFromText({
-                      gcpAuth,
+                      accessToken,
+                      projectId,
                       prompt,
                       imageModel: body?.imageModel,
                       imageConfig: body?.imageConfig,
@@ -214,7 +209,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
         const result =
           action === "edit"
             ? await geminiEditImage({
-              gcpAuth,
+              accessToken,
+              projectId,
               prompt,
               imageModel: body?.imageModel,
               images: base64Images!,
@@ -222,7 +218,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
               imageConfig: body?.imageConfig,
             })
             : await geminiGenerateImageFromText({
-              gcpAuth,
+              accessToken,
+              projectId,
               prompt,
               imageModel: body?.imageModel,
               imageConfig: body?.imageConfig,
@@ -269,7 +266,8 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
       const imageBase64 = await clientRefToBase64(env, auth.userKey, body.image);
 
       const result = await geminiAnalyzeImage({
-        gcpAuth,
+        accessToken,
+        projectId,
         prompt: "你是一位专业的图像分析师。请仔细分析这张图片，用中文写出一个能够精确重新生成这张图片的详细提示词。\n\n提示词必须涵盖以下维度：\n1. 主体描述：产品/人物/物体的具体特征、材质、质地、颜色、纹理\n2. 拍摄角度：俯拍/平拍/仰拍/45度角/正面/侧面等\n3. 位置与构图：主体在画面中的位置（居中/偏左/偏右/三分法）、与其他元素的空间关系\n4. 画面元素：背景、前景、装饰物、道具、陪衬元素\n5. 光线与色调：光源方向、光线类型（自然光/人造光/柔光/硬光）、整体色温、色彩氛围\n6. 风格与形式：摄影风格（产品摄影/生活方式/极简/复古等）、后期处理风格、画面氛围\n7. 细节特征：阴影、倒影、景深、模糊效果、特殊视觉效果\n\n只输出提示词文本，不要输出分析过程或标题。提示词应该是一段连贯的描述性文字。",
         image: imageBase64,
       });
@@ -294,8 +292,9 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     const aspectRatio = body?.aspectRatio ?? "16:9";
     const image = body?.image ? await clientRefToBase64(env, auth.userKey, body.image) : undefined;
 
-    const { operationName, clientEmail } = await geminiVideoStart({
-      gcpAuth,
+    const { operationName } = await geminiVideoStart({
+      accessToken,
+      projectId,
       prompt,
       aspectRatio,
       image,
@@ -303,7 +302,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
 
     await env.USERS_KV.put(
       `videoop:${operationName}`,
-      JSON.stringify({ userKey: auth.userKey, prompt, clientEmail }),
+      JSON.stringify({ userKey: auth.userKey, prompt }),
       { expirationTtl: 60 * 60 * 24 } // 24h
     );
 
@@ -316,15 +315,10 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     if (!operationName) return errorJson(400, "Missing name");
 
     const opMetaRaw = await env.USERS_KV.get(`videoop:${operationName}`);
-    const opMeta = opMetaRaw ? parseJsonSafe<{ userKey: string; prompt: string; clientEmail?: string }>(opMetaRaw) : null;
+    const opMeta = opMetaRaw ? parseJsonSafe<{ userKey: string; prompt: string }>(opMetaRaw) : null;
     if (!opMeta || opMeta.userKey !== auth.userKey) return errorJson(404, "Operation not found");
 
-    if (!opMeta.clientEmail) {
-      const first = await gcpAuth.getAuth();
-      opMeta.clientEmail = first.clientEmail;
-    }
-
-    const status = await geminiVideoStatus({ gcpAuth, clientEmail: opMeta.clientEmail, operationName });
+    const status = await geminiVideoStatus({ accessToken, projectId, operationName });
     if (!status.done) return json({ ok: true, done: false });
     if (status.error) return json({ ok: true, done: true, error: status.error.message });
 
@@ -339,14 +333,13 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
     }
 
     const needsBearerAuth = downloadLink.includes("googleapis.com");
-    let authHeader = undefined;
-    if (needsBearerAuth) {
-      const { accessToken } = await gcpAuth.getAuthByEmail(opMeta.clientEmail);
-      authHeader = { "Authorization": `Bearer ${accessToken}` };
-    }
     const videoRes = await fetch(
       downloadLink,
-      authHeader ? { headers: authHeader } : undefined
+      needsBearerAuth
+        ? {
+          headers: { "Authorization": `Bearer ${accessToken}` },
+        }
+        : undefined
     );
     if (!videoRes.ok) return errorJson(500, `Failed to download video: ${videoRes.statusText}`);
 

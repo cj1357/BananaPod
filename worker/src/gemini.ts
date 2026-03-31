@@ -1,5 +1,3 @@
-import type { GcpAuthPool } from "./gcp-auth";
-
 const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
 
@@ -68,20 +66,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type RequestBuilder = () => Promise<{ url: string; init: RequestInit; projectId: string }>;
-
-async function fetchWithRetry(
-  requestBuilder: RequestBuilder,
-  gcpAuthLength: number
-): Promise<Response> {
+async function fetchWithRetry(input: RequestInfo, init?: RequestInit): Promise<Response> {
   let lastResponse: Response | null = null;
-  const maxRetries = Math.max(MAX_RETRIES, gcpAuthLength);
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const { url, init, projectId } = await requestBuilder();
-    const endpointPath = url.split("aiplatform.googleapis.com")[1] || url;
-    console.log(`[Vertex AI][${projectId}] Sending request to ${endpointPath} (Attempt ${attempt + 1}/${maxRetries + 1})`);
-    const response = await fetch(url, init);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(input, init);
 
     // Only retry on 429 (rate limit) or 503 (overloaded)
     if (response.status !== 429 && response.status !== 503) {
@@ -90,7 +79,7 @@ async function fetchWithRetry(
 
     lastResponse = response;
 
-    if (attempt < maxRetries) {
+    if (attempt < MAX_RETRIES) {
       // Use Retry-After header if provided, otherwise exponential backoff
       const retryAfter = response.headers.get("Retry-After");
       let delayMs: number;
@@ -101,7 +90,7 @@ async function fetchWithRetry(
       }
       // Add jitter (±25%)
       delayMs = delayMs * (0.75 + Math.random() * 0.5);
-      console.log(`[Vertex AI][${projectId}] ${response.status} rate limited, retry ${attempt + 1}/${maxRetries} after ${Math.round(delayMs)}ms`);
+      console.log(`[Vertex AI] ${response.status} rate limited, retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delayMs)}ms`);
       await sleep(delayMs);
     }
   }
@@ -181,20 +170,19 @@ async function parseGenerateContentResponse(response: Response): Promise<GeminiR
 // ── Core request function ──
 
 async function requestImageGeneration(opts: {
-  gcpAuth: GcpAuthPool;
+  accessToken: string;
+  projectId: string;
   model: string;
   parts: GeminiPart[];
   imageConfig?: ImageConfig;
 }): Promise<GeminiResponse[]> {
-  const body = buildImageGenerationBody(opts.parts, opts.imageConfig);
-  const response = await fetchWithRetry(async () => {
-    const { accessToken, projectId } = await opts.gcpAuth.getAuth();
-    return {
-      url: buildVertexUrl(projectId, `${opts.model}:generateContent`),
-      init: { method: "POST", headers: buildBearerHeaders(accessToken), body },
-      projectId,
-    };
-  }, opts.gcpAuth.length);
+  const url = buildVertexUrl(opts.projectId, `${opts.model}:generateContent`);
+  const headers = buildBearerHeaders(opts.accessToken);
+  const response = await fetchWithRetry(url, {
+    method: "POST",
+    headers,
+    body: buildImageGenerationBody(opts.parts, opts.imageConfig),
+  });
   return await parseGenerateContentResponse(response);
 }
 
@@ -246,14 +234,16 @@ function extractImageResponse(responses: GeminiResponse[]): {
 // ── Exported API functions ──
 
 export async function geminiGenerateImageFromText(opts: {
-  gcpAuth: GcpAuthPool;
+  accessToken: string;
+  projectId: string;
   prompt: string;
   imageModel?: string;
   imageConfig?: ImageConfig;
 }): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
   return extractImageResponse(await requestImageGeneration({
-    gcpAuth: opts.gcpAuth,
+    accessToken: opts.accessToken,
+    projectId: opts.projectId,
     model,
     parts: [{ text: opts.prompt }],
     imageConfig: opts.imageConfig,
@@ -261,7 +251,8 @@ export async function geminiGenerateImageFromText(opts: {
 }
 
 export async function geminiEditImage(opts: {
-  gcpAuth: GcpAuthPool;
+  accessToken: string;
+  projectId: string;
   prompt: string;
   images: ImageInputBase64[];
   mask?: ImageInputBase64;
@@ -278,7 +269,8 @@ export async function geminiEditImage(opts: {
 
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
   return extractImageResponse(await requestImageGeneration({
-    gcpAuth: opts.gcpAuth,
+    accessToken: opts.accessToken,
+    projectId: opts.projectId,
     model,
     parts,
     imageConfig: opts.imageConfig,
@@ -286,12 +278,15 @@ export async function geminiEditImage(opts: {
 }
 
 export async function geminiAnalyzeImage(opts: {
-  gcpAuth: GcpAuthPool;
+  accessToken: string;
+  projectId: string;
   prompt: string;
   image: ImageInputBase64;
   imageModel?: string;
 }): Promise<{ textResponse: string }> {
   const model = opts.imageModel || "gemini-3.1-pro-preview";
+  const url = buildVertexUrl(opts.projectId, `${model}:generateContent`);
+  const headers = buildBearerHeaders(opts.accessToken);
 
   const body = JSON.stringify({
     contents: [{
@@ -314,14 +309,7 @@ export async function geminiAnalyzeImage(opts: {
     ],
   });
 
-  const response = await fetchWithRetry(async () => {
-    const { accessToken, projectId } = await opts.gcpAuth.getAuth();
-    return {
-      url: buildVertexUrl(projectId, `${model}:generateContent`),
-      init: { method: "POST", headers: buildBearerHeaders(accessToken), body },
-      projectId,
-    };
-  }, opts.gcpAuth.length);
+  const response = await fetchWithRetry(url, { method: "POST", headers, body });
   const responses = await parseGenerateContentResponse(response);
 
   const textParts: string[] = [];
@@ -336,11 +324,12 @@ export async function geminiAnalyzeImage(opts: {
 }
 
 export async function geminiVideoStart(opts: {
-  gcpAuth: GcpAuthPool;
+  accessToken: string;
+  projectId: string;
   prompt: string;
   aspectRatio: "16:9" | "9:16";
   image?: ImageInputBase64;
-}): Promise<{ operationName: string; clientEmail: string }> {
+}): Promise<{ operationName: string }> {
   const instance: Record<string, unknown> = { prompt: opts.prompt };
   if (opts.image) {
     instance.image = {
@@ -349,22 +338,15 @@ export async function geminiVideoStart(opts: {
     };
   }
 
-  const body = JSON.stringify({
-    instances: [instance],
-    parameters: { aspectRatio: opts.aspectRatio, sampleCount: 1 },
+  const url = buildVertexUrl(opts.projectId, `${VIDEO_MODEL}:predictLongRunning`);
+  const response = await fetchWithRetry(url, {
+    method: "POST",
+    headers: buildBearerHeaders(opts.accessToken),
+    body: JSON.stringify({
+      instances: [instance],
+      parameters: { aspectRatio: opts.aspectRatio, sampleCount: 1 },
+    }),
   });
-
-  let finalClientEmail = "";
-
-  const response = await fetchWithRetry(async () => {
-    const { accessToken, projectId, clientEmail } = await opts.gcpAuth.getAuth();
-    finalClientEmail = clientEmail;
-    return {
-      url: buildVertexUrl(projectId, `${VIDEO_MODEL}:predictLongRunning`),
-      init: { method: "POST", headers: buildBearerHeaders(accessToken), body },
-      projectId,
-    };
-  }, opts.gcpAuth.length);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -374,25 +356,22 @@ export async function geminiVideoStart(opts: {
   const data = (await response.json()) as VideoOperationResponse;
   const operationName = data.name;
   if (!operationName) throw new Error("Failed to get operation name from video generation request.");
-  return { operationName, clientEmail: finalClientEmail };
+  return { operationName };
 }
 
 export async function geminiVideoStatus(opts: {
-  gcpAuth: GcpAuthPool;
-  clientEmail: string;
+  accessToken: string;
+  projectId: string;
   operationName: string;
 }): Promise<VideoOperationResponse> {
-  const body = JSON.stringify({ operationName: opts.operationName });
-
-  const response = await fetchWithRetry(async () => {
-    const { accessToken, projectId } = await opts.gcpAuth.getAuthByEmail(opts.clientEmail);
-    return {
-      url: buildVertexUrl(projectId, `${VIDEO_MODEL}:fetchPredictOperation`),
-      init: { method: "POST", headers: buildBearerHeaders(accessToken), body },
-      projectId,
-    };
-  }, 1);
-
+  const url = buildVertexUrl(opts.projectId, `${VIDEO_MODEL}:fetchPredictOperation`);
+  const response = await fetchWithRetry(url, {
+    method: "POST",
+    headers: buildBearerHeaders(opts.accessToken),
+    body: JSON.stringify({
+      operationName: opts.operationName,
+    }),
+  });
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to check Vertex video status: ${response.status} ${response.statusText} - ${errorText}`);

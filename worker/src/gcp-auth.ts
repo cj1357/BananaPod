@@ -111,89 +111,47 @@ async function exchangeJwtForAccessToken(jwt: string, tokenUri: string): Promise
 
 // ---------- Token cache ----------
 
-const cachedTokens: Record<string, { accessToken: string; expiresAt: number }> = {};
-const cachedPrivateKeys: Record<string, CryptoKey> = {};
+let cachedToken: { accessToken: string; expiresAt: number } | null = null;
+let cachedPrivateKey: CryptoKey | null = null;
 
-async function getAccessTokenFromObj(sa: ServiceAccountKey): Promise<string> {
+/**
+ * 获取有效的 Access Token（自动缓存，提前 5 分钟刷新）。
+ *
+ * @param saKeyJson  Service Account JSON key 的原始 JSON 字符串
+ *                   （通过 wrangler secret 存储，运行时从 env 读取）
+ */
+export async function getAccessToken(saKeyJson: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const cacheKey = sa.client_email;
 
-  const cachedToken = cachedTokens[cacheKey];
   // Return cached token if still valid (with 5-min buffer)
   if (cachedToken && cachedToken.expiresAt > now + 300) {
     return cachedToken.accessToken;
   }
 
+  const sa: ServiceAccountKey = JSON.parse(saKeyJson);
   const tokenUri = sa.token_uri || "https://oauth2.googleapis.com/token";
   const scope = "https://www.googleapis.com/auth/cloud-platform";
 
   // Cache the imported private key to avoid re-import on every request
-  let privateKey = cachedPrivateKeys[cacheKey];
-  if (!privateKey) {
-    privateKey = await importPrivateKey(sa.private_key);
-    cachedPrivateKeys[cacheKey] = privateKey;
+  if (!cachedPrivateKey) {
+    cachedPrivateKey = await importPrivateKey(sa.private_key);
   }
 
-  const jwt = await createSignedJwt(sa.client_email, privateKey, tokenUri, scope);
+  const jwt = await createSignedJwt(sa.client_email, cachedPrivateKey, tokenUri, scope);
   const tokenResponse = await exchangeJwtForAccessToken(jwt, tokenUri);
 
-  cachedTokens[cacheKey] = {
+  cachedToken = {
     accessToken: tokenResponse.access_token,
     expiresAt: now + tokenResponse.expires_in,
   };
 
-  return tokenResponse.access_token;
-}
-
-// Module-level rotation index
-let currentIndex = 0;
-
-export interface GcpAuthPool {
-  length: number;
-  getAuth: () => Promise<{ accessToken: string; projectId: string; clientEmail: string }>;
-  getAuthByEmail: (email: string) => Promise<{ accessToken: string; projectId: string; clientEmail: string }>;
+  return cachedToken.accessToken;
 }
 
 /**
- * Creates a GCP auth pool from one or more JSON strings.
- * Each string can be a single Service Account key or an array of keys.
- * Calling getAuth() will return the next credential in a round-robin fashion.
+ * 从 Service Account Key JSON 中提取 project_id
  */
-export function createGcpAuthPool(inputs: string | string[]): GcpAuthPool {
-  const keys: ServiceAccountKey[] = [];
-  const inputArray = Array.isArray(inputs) ? inputs : [inputs];
-
-  for (const input of inputArray) {
-    if (!input || !input.trim()) continue;
-    try {
-      const parsed = JSON.parse(input);
-      if (Array.isArray(parsed)) {
-        keys.push(...parsed);
-      } else {
-        keys.push(parsed);
-      }
-    } catch (e) {
-      console.warn("Failed to parse a GCP_SERVICE_ACCOUNT_KEY entry", e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  if (keys.length === 0) {
-    throw new Error("No valid GCP Service Account Keys provided in the configuration.");
-  }
-
-  return {
-    length: keys.length,
-    getAuth: async () => {
-      const selected = keys[currentIndex];
-      currentIndex = (currentIndex + 1) % keys.length;
-      const accessToken = await getAccessTokenFromObj(selected);
-      return { accessToken, projectId: selected.project_id, clientEmail: selected.client_email };
-    },
-    getAuthByEmail: async (email: string) => {
-      const selected = keys.find(k => k.client_email === email);
-      if (!selected) throw new Error(`GCP credential for ${email} not found`);
-      const accessToken = await getAccessTokenFromObj(selected);
-      return { accessToken, projectId: selected.project_id, clientEmail: selected.client_email };
-    }
-  };
+export function getProjectId(saKeyJson: string): string {
+  const sa: ServiceAccountKey = JSON.parse(saKeyJson);
+  return sa.project_id;
 }
