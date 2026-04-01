@@ -421,10 +421,10 @@ const App: React.FC = () => {
     const [generationMode, setGenerationMode] = useState<'image' | 'video'>('image');
     const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
     const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio | 'auto'>('auto');
-    const [imageSize, setImageSize] = useState<ImageSize>('1K');
+    const [imageSize, setImageSize] = useState<ImageSize>('2K');
     const [imageModel, setImageModel] = useState<string>('gemini-3.1-flash-image-preview');
     const [imageCount, setImageCount] = useState<number>(2);
-    const [parallelGeneration, setParallelGeneration] = useState<boolean>(false);
+    const [parallelGeneration, setParallelGeneration] = useState<boolean>(true);
     const [progressMessage, setProgressMessage] = useState<string>('');
     const [clipboardCopyState, setClipboardCopyState] = useState<{ status: 'copying' | 'success'; elementId: string } | null>(null);
     const [outpaintTarget, setOutpaintTarget] = useState<ImageElement | null>(null);
