@@ -11,6 +11,7 @@ export type Env = {
   DB: D1Database;
   GCP_SERVICE_ACCOUNT_KEY: string;
   OPENROUTER_API_KEY: string;
+  API_ENDPOINT?: string;
 };
 
 type ClientImageRef =
@@ -73,6 +74,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
   if (!auth) return errorJson(401, "Unauthorized");
 
   const openRouterApiKey = env.OPENROUTER_API_KEY;
+  const apiEndpoint = env.API_ENDPOINT;
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
     const { clearSessionCookieHeader } = await destroySession(env.DB, auth.sessionId);
@@ -144,6 +146,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
                   action === "edit"
                     ? await geminiEditImage({
                       openRouterApiKey,
+                      apiEndpoint,
                       prompt,
                       imageModel: body?.imageModel,
                       images: base64Images!,
@@ -152,6 +155,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
                     })
                     : await geminiGenerateImageFromText({
                       openRouterApiKey,
+                      apiEndpoint,
                       prompt,
                       imageModel: body?.imageModel,
                       imageConfig: body?.imageConfig,
@@ -207,6 +211,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
           action === "edit"
             ? await geminiEditImage({
               openRouterApiKey,
+              apiEndpoint,
               prompt,
               imageModel: body?.imageModel,
               images: base64Images!,
@@ -215,6 +220,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
             })
             : await geminiGenerateImageFromText({
               openRouterApiKey,
+              apiEndpoint,
               prompt,
               imageModel: body?.imageModel,
               imageConfig: body?.imageConfig,
@@ -262,6 +268,7 @@ export async function routeApi(request: Request, env: Env): Promise<Response> {
 
       const result = await geminiAnalyzeImage({
         openRouterApiKey,
+        apiEndpoint,
         prompt: "你是一位专业的图像分析师。请仔细分析这张图片，用中文写出一个能够精确重新生成这张图片的详细提示词。\n\n提示词必须涵盖以下维度：\n1. 主体描述：产品/人物/物体的具体特征、材质、质地、颜色、纹理\n2. 拍摄角度：俯拍/平拍/仰拍/45度角/正面/侧面等\n3. 位置与构图：主体在画面中的位置（居中/偏左/偏右/三分法）、与其他元素的空间关系\n4. 画面元素：背景、前景、装饰物、道具、陪衬元素\n5. 光线与色调：光源方向、光线类型（自然光/人造光/柔光/硬光）、整体色温、色彩氛围\n6. 风格与形式：摄影风格（产品摄影/生活方式/极简/复古等）、后期处理风格、画面氛围\n7. 细节特征：阴影、倒影、景深、模糊效果、特殊视觉效果\n\n只输出提示词文本，不要输出分析过程或标题。提示词应该是一段连贯的描述性文字。",
         image: imageBase64,
       });

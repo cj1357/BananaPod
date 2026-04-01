@@ -133,7 +133,11 @@ export async function editImage(
       model = `google/${model}`;
     }
 
-    const response = await fetchWithTimeout(OPENROUTER_URL, {
+    const url = apiConfig.baseUrl 
+      ? (apiConfig.baseUrl.startsWith('http') ? `${apiConfig.baseUrl}/v1/chat/completions` : `https://${apiConfig.baseUrl}/v1/chat/completions`)
+      : OPENROUTER_URL;
+
+    const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiConfig.apiKey}`,
@@ -222,7 +226,11 @@ export async function generateImageFromText(
       model = `google/${model}`;
     }
 
-    const response = await fetchWithTimeout(OPENROUTER_URL, {
+    const url = apiConfig.baseUrl 
+      ? (apiConfig.baseUrl.startsWith('http') ? `${apiConfig.baseUrl}/v1/chat/completions` : `https://${apiConfig.baseUrl}/v1/chat/completions`)
+      : OPENROUTER_URL;
+
+    const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiConfig.apiKey}`,

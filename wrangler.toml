@@ -27,3 +27,5 @@ d1_databases = [
 
 # - OPENROUTER_API_KEY : (set via: wrangler secret put OPENROUTER_API_KEY)
 
+# - API_ENDPOINT : (set via: wrangler secret put API_ENDPOINT)
+

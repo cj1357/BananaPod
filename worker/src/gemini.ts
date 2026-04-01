@@ -190,11 +190,12 @@ async function parseOpenRouterResponse(response: Response): Promise<GeminiRespon
 
 async function requestOpenRouterImageGeneration(opts: {
   openRouterApiKey: string;
+  apiEndpoint?: string;
   model: string;
   parts: GeminiPart[];
   imageConfig?: ImageConfig;
 }): Promise<GeminiResponse[]> {
-  const url = "https://openrouter.ai/api/v1/chat/completions";
+  const url = opts.apiEndpoint ? `https://${opts.apiEndpoint}/v1/chat/completions` : "https://openrouter.ai/api/v1/chat/completions";
   const headers = {
     "Authorization": `Bearer ${opts.openRouterApiKey}`,
     "Content-Type": "application/json",
@@ -256,6 +257,7 @@ function extractImageResponse(responses: GeminiResponse[]): {
 
 export async function geminiGenerateImageFromText(opts: {
   openRouterApiKey: string;
+  apiEndpoint?: string;
   prompt: string;
   imageModel?: string;
   imageConfig?: ImageConfig;
@@ -263,6 +265,7 @@ export async function geminiGenerateImageFromText(opts: {
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
   return extractImageResponse(await requestOpenRouterImageGeneration({
     openRouterApiKey: opts.openRouterApiKey,
+    apiEndpoint: opts.apiEndpoint,
     model,
     parts: [{ text: opts.prompt }],
     imageConfig: opts.imageConfig,
@@ -271,6 +274,7 @@ export async function geminiGenerateImageFromText(opts: {
 
 export async function geminiEditImage(opts: {
   openRouterApiKey: string;
+  apiEndpoint?: string;
   prompt: string;
   images: ImageInputBase64[];
   mask?: ImageInputBase64;
@@ -288,6 +292,7 @@ export async function geminiEditImage(opts: {
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
   return extractImageResponse(await requestOpenRouterImageGeneration({
     openRouterApiKey: opts.openRouterApiKey,
+    apiEndpoint: opts.apiEndpoint,
     model,
     parts,
     imageConfig: opts.imageConfig,
@@ -296,12 +301,13 @@ export async function geminiEditImage(opts: {
 
 export async function geminiAnalyzeImage(opts: {
   openRouterApiKey: string;
+  apiEndpoint?: string;
   prompt: string;
   image: ImageInputBase64;
   imageModel?: string;
 }): Promise<{ textResponse: string }> {
   const model = opts.imageModel || "google/gemini-3.1-pro-preview";
-  const url = "https://openrouter.ai/api/v1/chat/completions";
+  const url = opts.apiEndpoint ? `https://${opts.apiEndpoint}/v1/chat/completions` : "https://openrouter.ai/api/v1/chat/completions";
   const headers = {
     "Authorization": `Bearer ${opts.openRouterApiKey}`,
     "Content-Type": "application/json",
