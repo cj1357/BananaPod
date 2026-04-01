@@ -126,6 +126,9 @@ function buildOpenRouterImageBody(model: string, parts: GeminiPart[], imageConfi
           : openRouterParts,
       },
     ],
+    provider: {
+      only: ["google"],
+    },
   };
 
   const orImageConfig: Record<string, unknown> = {};
@@ -323,6 +326,9 @@ export async function geminiAnalyzeImage(opts: {
       ],
     }],
     temperature: 0.4,
+    provider: {
+      only: ["google"],
+    },
   });
 
   const response = await fetchWithRetry(url, { method: "POST", headers, body });
