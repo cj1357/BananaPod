@@ -127,7 +127,7 @@ function buildOpenRouterImageBody(model: string, parts: GeminiPart[], imageConfi
       },
     ],
     provider: {
-      only: ["google"],
+      only: ["google-vertex"],
     },
   };
 
@@ -327,7 +327,7 @@ export async function geminiAnalyzeImage(opts: {
     }],
     temperature: 0.4,
     provider: {
-      only: ["google"],
+      only: ["google-vertex"],
     },
   });
 
