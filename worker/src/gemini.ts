@@ -1,4 +1,4 @@
-const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
+const DEFAULT_IMAGE_MODEL = "google/gemini-3.1-flash-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
 
 type ImageAspectRatio = "auto" | "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
@@ -100,90 +100,111 @@ async function fetchWithRetry(input: RequestInfo, init?: RequestInit): Promise<R
 
 // ── Request body builders ──
 
-function buildImageGenerationBody(parts: GeminiPart[], imageConfig?: ImageConfig): string {
-  const vertexImageConfig: Record<string, unknown> = {};
-  if (imageConfig?.imageSize) {
-    vertexImageConfig.imageSize = imageConfig.imageSize;
-  }
-  if (imageConfig?.aspectRatio && imageConfig.aspectRatio !== "auto") {
-    vertexImageConfig.aspectRatio = imageConfig.aspectRatio;
-  }
-  vertexImageConfig.imageOutputOptions = {
-    mimeType: "image/png",
-  };
-  vertexImageConfig.personGeneration = "ALLOW_ALL";
+// ── OpenRouter request helpers ──
+
+type OpenRouterContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+function buildOpenRouterImageBody(model: string, parts: GeminiPart[], imageConfig?: ImageConfig): string {
+  const openRouterParts: OpenRouterContentPart[] = parts.map(p => {
+    if ("text" in p) {
+      return { type: "text", text: p.text };
+    } else {
+      return { type: "image_url", image_url: { url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}` } };
+    }
+  });
 
   const body: Record<string, unknown> = {
-    contents: [
+    model,
+    messages: [
       {
         role: "user",
-        parts,
+        // Only one part if it's text, otherwise array of parts
+        content: openRouterParts.length === 1 && openRouterParts[0].type === "text" 
+          ? openRouterParts[0].text 
+          : openRouterParts,
       },
     ],
-    generationConfig: {
-      temperature: 1,
-      maxOutputTokens: 32768,
-      responseModalities: ["IMAGE"],
-      topP: 0.9,
-    },
   };
 
-  if (Object.keys(vertexImageConfig).length > 0) {
-    (body.generationConfig as Record<string, unknown>).imageConfig = vertexImageConfig;
-  }
+  const orImageConfig: Record<string, unknown> = {};
+  if (imageConfig?.imageSize) orImageConfig.image_size = imageConfig.imageSize;
+  if (imageConfig?.aspectRatio && imageConfig.aspectRatio !== "auto") orImageConfig.aspect_ratio = imageConfig.aspectRatio;
 
-  body.safetySettings = [
-    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-  ];
+  if (Object.keys(orImageConfig).length > 0) {
+    body.image_config = orImageConfig;
+  }
+  
+  body.modalities = ["image", "text"];
 
   return JSON.stringify(body);
 }
 
-async function parseGenerateContentResponse(response: Response): Promise<GeminiResponse[]> {
+async function parseOpenRouterResponse(response: Response): Promise<GeminiResponse[]> {
   const rawText = await response.text();
   if (!response.ok) {
-    throw new Error(`Vertex generateContent failed: ${response.status} ${response.statusText} - ${rawText}`);
+    throw new Error(`OpenRouter API failed: ${response.status} ${response.statusText} - ${rawText}`);
   }
 
-  const trimmed = rawText.trim();
-  if (!trimmed) return [];
-
-  try {
-    const parsed = JSON.parse(trimmed) as GeminiResponse | GeminiResponse[];
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    try {
-      // Fast path for valid NDJSON or concatenated JSON objects (often returned un-streamed by Vertex if chunked)
-      // We replace `}\n{` boundaries with `},{` and wrap the whole thing in an array bracket to form a valid JSON array.
-      const normalized = `[${trimmed.replace(/}\s*\n\s*(?=\{)/g, "},")}]`;
-      const parsed = JSON.parse(normalized) as GeminiResponse[];
-      return parsed;
-    } catch {
-      throw new Error(`Unable to parse Vertex generateContent response: ${trimmed.slice(0, 1000)}`);
+  const data = JSON.parse(rawText);
+  const choice = data.choices?.[0];
+  const message = choice?.message;
+  
+  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+  
+  if (message?.content) {
+    parts.push({ text: message.content });
+  }
+  
+  if (message?.images && Array.isArray(message.images)) {
+    for (const img of message.images) {
+      const dataUrl = img.image_url?.url || "";
+      if (dataUrl.startsWith("data:image/")) {
+        const matches = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          parts.push({
+            inlineData: {
+              mimeType: matches[1],
+              data: matches[2]
+            }
+          });
+        }
+      }
     }
   }
+
+  return [
+    {
+      candidates: [
+        {
+          content: { parts },
+          finishReason: choice?.finish_reason,
+        }
+      ]
+    }
+  ];
 }
 
 // ── Core request function ──
 
-async function requestImageGeneration(opts: {
-  accessToken: string;
-  projectId: string;
+async function requestOpenRouterImageGeneration(opts: {
+  openRouterApiKey: string;
   model: string;
   parts: GeminiPart[];
   imageConfig?: ImageConfig;
 }): Promise<GeminiResponse[]> {
-  const url = buildVertexUrl(opts.projectId, `${opts.model}:generateContent`);
-  const headers = buildBearerHeaders(opts.accessToken);
+  const url = "https://openrouter.ai/api/v1/chat/completions";
+  const headers = {
+    "Authorization": `Bearer ${opts.openRouterApiKey}`,
+    "Content-Type": "application/json",
+  };
   const response = await fetchWithRetry(url, {
     method: "POST",
     headers,
-    body: buildImageGenerationBody(opts.parts, opts.imageConfig),
+    body: buildOpenRouterImageBody(opts.model, opts.parts, opts.imageConfig),
   });
-  return await parseGenerateContentResponse(response);
+  return await parseOpenRouterResponse(response);
 }
 
 function extractImageResponse(responses: GeminiResponse[]): {
@@ -234,16 +255,14 @@ function extractImageResponse(responses: GeminiResponse[]): {
 // ── Exported API functions ──
 
 export async function geminiGenerateImageFromText(opts: {
-  accessToken: string;
-  projectId: string;
+  openRouterApiKey: string;
   prompt: string;
   imageModel?: string;
   imageConfig?: ImageConfig;
 }): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
-  return extractImageResponse(await requestImageGeneration({
-    accessToken: opts.accessToken,
-    projectId: opts.projectId,
+  return extractImageResponse(await requestOpenRouterImageGeneration({
+    openRouterApiKey: opts.openRouterApiKey,
     model,
     parts: [{ text: opts.prompt }],
     imageConfig: opts.imageConfig,
@@ -251,8 +270,7 @@ export async function geminiGenerateImageFromText(opts: {
 }
 
 export async function geminiEditImage(opts: {
-  accessToken: string;
-  projectId: string;
+  openRouterApiKey: string;
   prompt: string;
   images: ImageInputBase64[];
   mask?: ImageInputBase64;
@@ -268,9 +286,8 @@ export async function geminiEditImage(opts: {
     : [...imageParts, textPart];
 
   const model = opts.imageModel || DEFAULT_IMAGE_MODEL;
-  return extractImageResponse(await requestImageGeneration({
-    accessToken: opts.accessToken,
-    projectId: opts.projectId,
+  return extractImageResponse(await requestOpenRouterImageGeneration({
+    openRouterApiKey: opts.openRouterApiKey,
     model,
     parts,
     imageConfig: opts.imageConfig,
@@ -278,39 +295,32 @@ export async function geminiEditImage(opts: {
 }
 
 export async function geminiAnalyzeImage(opts: {
-  accessToken: string;
-  projectId: string;
+  openRouterApiKey: string;
   prompt: string;
   image: ImageInputBase64;
   imageModel?: string;
 }): Promise<{ textResponse: string }> {
-  const model = opts.imageModel || "gemini-3.1-pro-preview";
-  const url = buildVertexUrl(opts.projectId, `${model}:generateContent`);
-  const headers = buildBearerHeaders(opts.accessToken);
+  const model = opts.imageModel || "google/gemini-3.1-pro-preview";
+  const url = "https://openrouter.ai/api/v1/chat/completions";
+  const headers = {
+    "Authorization": `Bearer ${opts.openRouterApiKey}`,
+    "Content-Type": "application/json",
+  };
 
   const body = JSON.stringify({
-    contents: [{
+    model,
+    messages: [{
       role: "user",
-      parts: [
-        { inlineData: { data: opts.image.base64, mimeType: opts.image.mimeType } },
-        { text: opts.prompt },
+      content: [
+        { type: "text", text: opts.prompt },
+        { type: "image_url", image_url: { url: `data:${opts.image.mimeType};base64,${opts.image.base64}` } }
       ],
     }],
-    generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 4096,
-      responseModalities: ["TEXT"],
-    },
-    safetySettings: [
-      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-    ],
+    temperature: 0.4,
   });
 
   const response = await fetchWithRetry(url, { method: "POST", headers, body });
-  const responses = await parseGenerateContentResponse(response);
+  const responses = await parseOpenRouterResponse(response);
 
   const textParts: string[] = [];
   for (const r of responses) {

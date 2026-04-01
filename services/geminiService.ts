@@ -1,5 +1,6 @@
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
-const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const DEFAULT_IMAGE_MODEL = "google/gemini-3.1-flash-image-preview";
 const VIDEO_MODEL = "veo-3.1-generate-preview";
 
 // Default timeout: 5 minutes for image generation
@@ -121,55 +122,71 @@ export async function editImage(
     ? [textPart, ...imageParts, maskPart]
     : [...imageParts, textPart];
 
+  const openRouterParts = parts.map(p => {
+    if (p.text) return { type: "text", text: p.text };
+    return { type: "image_url", image_url: { url: `data:${p.inlineData!.mimeType};base64,${p.inlineData!.data}` } };
+  });
+
   try {
-    const model = imageConfig?.imageModel || DEFAULT_IMAGE_MODEL;
-    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${model}:generateContent`, {
+    let model = imageConfig?.imageModel || DEFAULT_IMAGE_MODEL;
+    if (model === "gemini-3.1-flash-image-preview" || model === "gemini-3-pro-image-preview") {
+      model = `google/${model}`;
+    }
+
+    const response = await fetchWithTimeout(OPENROUTER_URL, {
       method: 'POST',
       headers: {
-        'x-goog-api-key': apiConfig.apiKey,
+        'Authorization': `Bearer ${apiConfig.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        contents: [{
-          parts: parts,
+        model: model,
+        messages: [{
+          role: "user",
+          content: openRouterParts,
         }],
-        generationConfig: {
-          responseModalities: ['IMAGE'],
-          ...(imageConfig && {
-            imageConfig: {
-              ...(imageConfig.aspectRatio && { aspectRatio: imageConfig.aspectRatio }),
-              ...(imageConfig.imageSize && { imageSize: imageConfig.imageSize }),
-            },
-          }),
-        },
+        modalities: ['image', 'text'],
+        ...(imageConfig && Object.keys(imageConfig).length > 0 && {
+          image_config: {
+            ...(imageConfig.aspectRatio && { aspect_ratio: imageConfig.aspectRatio }),
+            ...(imageConfig.imageSize && { image_size: imageConfig.imageSize }),
+          },
+        }),
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new Error(`OpenRouter API request failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const data: GeminiResponse = await response.json();
+    const data = await response.json();
 
     let newImageBase64: string | null = null;
     let newImageMimeType: string | null = null;
     let textResponse: string | null = null;
 
-    if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
-      const responseParts = data.candidates[0].content.parts;
-      for (const part of responseParts) {
-        if (part.inlineData) {
-          newImageBase64 = part.inlineData.data;
-          newImageMimeType = part.inlineData.mimeType;
-        } else if (part.text) {
-          textResponse = part.text;
+    const choice = data.choices?.[0];
+    const message = choice?.message;
+
+    if (message?.content) {
+      textResponse = message.content;
+    }
+
+    if (message?.images && Array.isArray(message.images) && message.images.length > 0) {
+      const img = message.images[0];
+      const dataUrl = img.image_url?.url || "";
+      if (dataUrl.startsWith("data:image/")) {
+        const matches = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          newImageMimeType = matches[1];
+          newImageBase64 = matches[2];
         }
       }
-    } else {
+    } else if (!textResponse) {
       textResponse = "The AI response was blocked or did not contain content.";
-      if (data.candidates && data.candidates.length > 0 && data.candidates[0].finishReason) {
-        textResponse += ` (Reason: ${data.candidates[0].finishReason})`;
+      if (choice?.finish_reason) {
+        textResponse += ` (Reason: ${choice.finish_reason})`;
       }
     }
 
@@ -200,56 +217,65 @@ export async function generateImageFromText(
   const baseUrl = apiConfig.baseUrl || DEFAULT_BASE_URL;
 
   try {
-    const model = imageConfig?.imageModel || DEFAULT_IMAGE_MODEL;
-    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${model}:generateContent`, {
+    let model = imageConfig?.imageModel || DEFAULT_IMAGE_MODEL;
+    if (model === "gemini-3.1-flash-image-preview" || model === "gemini-3-pro-image-preview") {
+      model = `google/${model}`;
+    }
+
+    const response = await fetchWithTimeout(OPENROUTER_URL, {
       method: 'POST',
       headers: {
-        'x-goog-api-key': apiConfig.apiKey,
+        'Authorization': `Bearer ${apiConfig.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt }
-          ],
+        model: model,
+        messages: [{
+          role: "user",
+          content: prompt,
         }],
-        generationConfig: {
-          responseModalities: ['IMAGE'],
-          ...(imageConfig && {
-            imageConfig: {
-              ...(imageConfig.aspectRatio && { aspectRatio: imageConfig.aspectRatio }),
-              ...(imageConfig.imageSize && { imageSize: imageConfig.imageSize }),
-            },
-          }),
-        },
+        modalities: ['image', 'text'],
+        ...(imageConfig && Object.keys(imageConfig).length > 0 && {
+          image_config: {
+            ...(imageConfig.aspectRatio && { aspect_ratio: imageConfig.aspectRatio }),
+            ...(imageConfig.imageSize && { image_size: imageConfig.imageSize }),
+          },
+        }),
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new Error(`OpenRouter API request failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const data: GeminiResponse = await response.json();
+    const data = await response.json();
 
     let newImageBase64: string | null = null;
     let newImageMimeType: string | null = null;
     let textResponse: string | null = null;
 
-    if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
-      const responseParts = data.candidates[0].content.parts;
-      for (const part of responseParts) {
-        if (part.inlineData) {
-          newImageBase64 = part.inlineData.data;
-          newImageMimeType = part.inlineData.mimeType;
-        } else if (part.text) {
-          textResponse = part.text;
+    const choice = data.choices?.[0];
+    const message = choice?.message;
+
+    if (message?.content) {
+      textResponse = message.content;
+    }
+
+    if (message?.images && Array.isArray(message.images) && message.images.length > 0) {
+      const img = message.images[0];
+      const dataUrl = img.image_url?.url || "";
+      if (dataUrl.startsWith("data:image/")) {
+        const matches = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          newImageMimeType = matches[1];
+          newImageBase64 = matches[2];
         }
       }
-    } else {
+    } else if (!textResponse) {
       textResponse = "The AI response was blocked or did not contain content.";
-      if (data.candidates && data.candidates.length > 0 && data.candidates[0].finishReason) {
-        textResponse += ` (Reason: ${data.candidates[0].finishReason})`;
+      if (choice?.finish_reason) {
+        textResponse += ` (Reason: ${choice.finish_reason})`;
       }
     }
 

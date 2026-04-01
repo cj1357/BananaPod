@@ -32,3 +32,6 @@ test-output.log
 gcp-key.json
 .dev.vars
 test-vertex-standard.mjs
+test-openrouter.mjs
+test-openrouter-output-1.png
+test-openrouter.ps1

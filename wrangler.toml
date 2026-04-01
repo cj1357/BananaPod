@@ -1,4 +1,4 @@
-name = "bananapod-vertex"
+name = "bananapod-openrouter"
 main = "worker/src/index.ts"
 compatibility_date = "2025-12-13"
 compatibility_flags = [ "nodejs_compat" ]
@@ -24,4 +24,6 @@ d1_databases = [
 
 # Secrets (set via: wrangler secret put GCP_SERVICE_ACCOUNT_KEY)
 # - GCP_SERVICE_ACCOUNT_KEY: the full JSON content of a GCP service account key file
+
+# - OPENROUTER_API_KEY : (set via: wrangler secret put OPENROUTER_API_KEY)
 
